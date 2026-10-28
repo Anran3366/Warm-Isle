@@ -1,0 +1,4 @@
+Flask>=3.0
+requests>=2.31
+websocket-client>=1.7
+silk-python>=0.2.9

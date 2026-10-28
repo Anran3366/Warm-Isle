@@ -1,0 +1,29 @@
+use_default_settings: true
+
+general:
+  instance_name: "qqbot-search"
+  debug: false
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "qqbot-searxng-2026-please-change"
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+engines:
+  - name: baidu
+    disabled: false
+  - name: baidu images
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: bing images
+    disabled: false
+  - name: sogou
+    disabled: false

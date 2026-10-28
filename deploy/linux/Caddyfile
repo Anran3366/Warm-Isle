@@ -1,0 +1,31 @@
+# 默认只监听 80；有域名后把 :80 换成你的域名，Caddy 会自动申请 HTTPS
+
+:80 {
+	encode zstd gzip
+
+	@staticSites path /home/* /xiaoman/*
+	header @staticSites Cache-Control "no-cache"
+
+	redir /home /home/ 308
+	handle_path /home/* {
+		root * /srv/site/home
+		try_files {path} /index.html
+		file_server
+	}
+
+	redir /xiaoman /xiaoman/ 308
+	handle_path /xiaoman/* {
+		root * /srv/site/xiaoman
+		try_files {path} /index.html
+		file_server
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+}

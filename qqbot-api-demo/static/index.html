@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>小满 · QQ 官方机器人消息实验室</title>
+  <meta name="description" content="QQ 官方机器人 API v2 本地 Demo：主动文本、表情包与语音消息。">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%230ea5d4'/%3E%3Cpath d='M17 22c0-5 4-9 9-9h12c5 0 9 4 9 9v10c0 5-4 9-9 9h-6l-9 7c-1.4.9-3.2-.1-3.2-1.8V40C14.2 38.5 12 35.6 12 32v-3c0-3 .8-5 5-7Z' fill='white'/%3E%3Ccircle cx='27' cy='27' r='2.7' fill='%230ea5d4'/%3E%3Ccircle cx='38' cy='27' r='2.7' fill='%230ea5d4'/%3E%3Cpath d='M26 34c3 2.3 7 2.3 10 0' stroke='%230ea5d4' stroke-width='3' stroke-linecap='round' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M7 9.4C7 6.4 9.4 4 12.4 4h7.2C22.6 4 25 6.4 25 9.4v7.2c0 3-2.4 5.4-5.4 5.4h-3.2l-5.9 4.2c-.9.6-2.1-.1-2.1-1.2v-3.7C6.4 20.3 6 19 6 17.5V9.4H7Z" fill="currentColor"/><circle cx="12.2" cy="13" r="1.6" fill="#fff"/><circle cx="19.8" cy="13" r="1.6" fill="#fff"/><path d="M12.5 17c1.9 1.5 5.1 1.5 7 0" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </span>
+      <span class="brand-copy">
+        <strong>小满 · 消息实验室</strong>
+        <small>QQ 机器人开放平台 API v2</small>
+      </span>
+    </a>
+    <div class="top-actions">
+      <div class="status-pill" id="modePill">
+        <span class="status-dot"></span>
+        <span id="modeText">连接中</span>
+      </div>
+      <a class="ghost-btn docs-link" href="https://bot.q.qq.com/wiki/develop/api-v2/" target="_blank" rel="noreferrer">
+        官方文档
+        <svg viewBox="0 0 16 16" fill="none"><path d="M6 3h7v7M13 3 5.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="打开设置" title="设置">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 15.3a3.3 3.3 0 1 0 0-6.6 3.3 3.3 0 0 0 0 6.6Z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.4a7.7 7.7 0 0 0 0-2.8l2-1.5-2-3.4-2.4 1a8 8 0 0 0-2.4-1.4L14.2 2h-4.4l-.4 3.3A8 8 0 0 0 7 6.7l-2.4-1-2 3.4 2 1.5a7.7 7.7 0 0 0 0 2.8l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 2.4 1.4L10 22h4.4l.4-3.3a8 8 0 0 0 2.4-1.4l2.4 1 2-3.4-2.2-1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage">
+      <div class="stage-heading">
+        <div>
+          <span class="eyebrow">LIVE PREVIEW</span>
+          <h1>消息发出去，<br><em>长这样。</em></h1>
+        </div>
+        <p>这里同步展示机器人刚刚发到 QQ 的真实内容，以及你在 QQ 里发来的消息。</p>
+      </div>
+
+      <div class="phone-scene">
+        <div class="phone-shadow"></div>
+        <div class="phone">
+          <div class="phone-speaker"></div>
+          <div class="phone-screen">
+            <div class="chat-head">
+              <div class="bot-avatar" id="phoneAvatar">
+                <span>满</span>
+              </div>
+              <div class="chat-title">
+                <strong id="botName">小满</strong>
+                <span><i class="tiny-dot"></i> 官方机器人</span>
+              </div>
+              <a class="add-bot" id="addBotLink" href="#" target="_blank" rel="noreferrer" title="打开机器人分享链接">
+                <svg viewBox="0 0 20 20" fill="none"><path d="M10 4.5v11M4.5 10h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+              </a>
+            </div>
+
+            <div class="chat-body" id="chatBody">
+              <div class="date-divider"><span id="chatDate">今天</span></div>
+              <div class="chat-empty" id="chatEmpty">
+                <div class="empty-orbit">
+                  <span class="orbit-dot d1"></span><span class="orbit-dot d2"></span><span class="orbit-dot d3"></span>
+                  <div class="empty-avatar">满</div>
+                </div>
+                <strong>还没发出第一条消息</strong>
+                <p>在右侧选一个功能，点一下按钮试试。</p>
+              </div>
+            </div>
+
+            <div class="chat-composer">
+              <span class="fake-input">在这里和机器人聊天…</span>
+              <span class="fake-plus">＋</span>
+            </div>
+            <div class="phone-home"></div>
+          </div>
+        </div>
+        <div class="scene-caption">
+          <span class="caption-index">01</span>
+          <span>本地预览窗，不是 QQ 客户端截图</span>
+        </div>
+        <div class="api-ribbon">
+          <span class="ribbon-label">API FLOW</span>
+          <div class="ribbon-step"><i>1</i><span><b>AccessToken</b><small>自动缓存续期</small></span></div>
+          <span class="ribbon-arrow">→</span>
+          <div class="ribbon-step"><i>2</i><span><b>Upload</b><small>富媒体素材</small></span></div>
+          <span class="ribbon-arrow">→</span>
+          <div class="ribbon-step"><i>3</i><span><b>Message</b><small>主动触达</small></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="control-column">
+      <article class="card target-card">
+        <div class="card-top">
+          <div>
+            <span class="eyebrow">DELIVERY</span>
+            <h2>发送目标</h2>
+          </div>
+          <div class="gateway-chip" id="gatewayChip">
+            <span class="chip-dot"></span>
+            <span id="gatewayText">监听待启动</span>
+          </div>
+        </div>
+
+        <div class="segmented" id="targetType" role="tablist" aria-label="目标类型">
+          <button class="seg-btn active" data-type="c2c" type="button">单聊</button>
+          <button class="seg-btn" data-type="group" type="button">群聊</button>
+          <span class="seg-glider"></span>
+        </div>
+
+        <label class="field-label" for="targetId">OpenID</label>
+        <div class="input-with-action">
+          <input id="targetId" class="text-input mono" type="text" spellcheck="false" placeholder="在 QQ 里给机器人发条消息，自动填入">
+          <button class="mini-btn" id="pasteBtn" type="button">粘贴</button>
+        </div>
+        <div class="contact-row" id="contactRow" hidden>
+          <span>最近会话</span>
+          <select id="contactSelect" class="contact-select"></select>
+        </div>
+        <p class="field-help" id="targetHelp">
+          <span class="pulse-ring"></span>
+          正在监听 QQ 消息，给「小满」发一句任意内容即可自动获取 OpenID。
+        </p>
+
+        <div class="target-footer">
+          <label class="switch-line" for="liveToggle">
+            <span class="switch">
+              <input id="liveToggle" type="checkbox" checked>
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </span>
+            <span>
+              <b>真实发送</b>
+              <small>关闭后只在本地模拟</small>
+            </span>
+          </label>
+          <div class="target-footer-actions">
+            <button class="text-btn" id="restartGateway" type="button">重连监听</button>
+            <button class="save-btn" id="saveTarget" type="button">保存目标</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card feature-card" id="textCard">
+        <div class="feature-head">
+          <span class="step">01</span>
+          <div class="feature-title">
+            <h3>主动发消息</h3>
+            <p>文本走 <code>msg_type: 0</code>，无需用户先说话。</p>
+          </div>
+          <span class="feature-icon coral">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 5.8c0-.9.8-1.6 1.7-1.4l14 4.7c1 .3 1 1.7 0 2.1l-5.5 2.2a1 1 0 0 0-.6.6l-2.2 5.4c-.4 1-1.8 1-2.1 0L4 5.8Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m10.2 13.8 4.2-4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+        <div class="textarea-wrap">
+          <textarea id="textInput" maxlength="1000" rows="3" placeholder="输入机器人要发送的文字…">你好呀，我是小满，这是一条主动消息 👋</textarea>
+          <span class="char-count"><b id="textCount">0</b>/1000</span>
+        </div>
+        <div class="quick-row">
+          <button class="quick-chip" type="button" data-text="晚上好，今天过得怎么样？">晚间问候</button>
+          <button class="quick-chip" type="button" data-text="刚刚看到一条很有意思的新闻，想和你分享。">分享一句话</button>
+          <button class="quick-chip" type="button" data-text="记得喝水，休息一下眼睛。">贴心提醒</button>
+        </div>
+        <button class="primary-btn" id="sendTextBtn" type="button">
+          <span class="btn-label">发送文字消息</span>
+          <span class="spinner"></span>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M3.5 10h12M11 5.5l4.5 4.5L11 14.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </article>
+
+      <article class="card feature-card" id="stickerCard">
+        <div class="feature-head">
+          <span class="step">02</span>
+          <div class="feature-title">
+            <h3>发送表情包</h3>
+            <p>先上传素材，再用 <code>msg_type: 7</code> 发出。</p>
+          </div>
+          <span class="feature-icon mint">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="3.5" y="3.5" width="17" height="17" rx="5" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="9.5" r="1.2" fill="currentColor"/><circle cx="15" cy="9.5" r="1.2" fill="currentColor"/><path d="M8.5 14.2c1.8 2 5.2 2 7 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+        <input type="file" id="stickerInput" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp" hidden>
+        <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="选择表情包图片">
+          <div class="dropzone-empty" id="dropEmpty">
+            <span class="upload-glyph">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 16V5m0 0L7.5 9.5M12 5l4.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15v2.5A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+            </span>
+            <div>
+              <strong>把表情包拖进来</strong>
+              <p>或点击选择 · PNG / JPG / GIF / WEBP · ≤5MB</p>
+            </div>
+          </div>
+          <div class="dropzone-preview" id="dropPreview" hidden>
+            <img id="stickerPreview" alt="表情包预览">
+            <div class="preview-meta">
+              <strong id="stickerName"></strong>
+              <small id="stickerSize"></small>
+            </div>
+            <button class="remove-file" id="removeFile" type="button" aria-label="移除图片">×</button>
+          </div>
+        </div>
+        <button class="primary-btn secondary" id="sendStickerBtn" type="button" disabled>
+          <span class="btn-label">上传并发送表情包</span>
+          <span class="spinner"></span>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v9M6.5 9.5 10 13l3.5-3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M4.5 15.5h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+      </article>
+
+      <article class="card feature-card" id="voiceCard">
+        <div class="feature-head">
+          <span class="step">03</span>
+          <div class="feature-title">
+            <h3>文字生成语音</h3>
+            <p>本机 TTS → Tencent SILK → 语音条。</p>
+          </div>
+          <span class="feature-icon lilac">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="8.5" y="3" width="7" height="12" rx="3.5" stroke="currentColor" stroke-width="1.6"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </div>
+        <div class="voice-grid">
+          <div class="textarea-wrap voice-area">
+            <textarea id="voiceText" maxlength="300" rows="3" placeholder="输入要读出来的文字…">晚上好，今天也辛苦啦。送你一句晚安，做个好梦。</textarea>
+            <span class="char-count"><b id="voiceCount">0</b>/300</span>
+          </div>
+          <div class="voice-side">
+            <label class="tiny-label" for="voiceSelect">音色</label>
+            <select id="voiceSelect" class="select-input">
+              <option value="Tingting">婷婷 · 普通话</option>
+              <option value="Meijia">美佳 · 台湾腔</option>
+              <option value="Sinji">善怡 · 粤语</option>
+              <option value="Flo">Flo · 普通话</option>
+            </select>
+            <div class="format-badge" id="formatBadge"><span></span> SILK 语音条</div>
+          </div>
+        </div>
+        <div class="audio-preview" id="audioPreview" hidden>
+          <button class="round-play" id="previewPlayBtn" type="button" aria-label="试听">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M7 5.5 14 10l-7 4.5v-9Z" fill="currentColor"/></svg>
+          </button>
+          <div class="waveform mini" data-wave></div>
+          <span id="audioDuration">0.0s</span>
+          <audio id="previewAudio" preload="metadata"></audio>
+        </div>
+        <button class="primary-btn secondary" id="sendVoiceBtn" type="button">
+          <span class="btn-label">生成并发送语音</span>
+          <span class="spinner"></span>
+          <svg viewBox="0 0 20 20" fill="none"><path d="M4 10h2l1.5-3 2.2 7L11.5 10H16" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </article>
+
+      <article class="card log-card">
+        <div class="log-head">
+          <div>
+            <span class="eyebrow">REQUEST LOG</span>
+            <h3>请求日志</h3>
+          </div>
+          <span class="log-count" id="logCount">0 条</span>
+        </div>
+        <div class="log-list" id="logList">
+          <div class="log-empty">调用官方接口后，这里会留下可检查的记录。</div>
+        </div>
+      </article>
+
+      <footer class="page-foot">
+        <span>Built for QQ Bot API v2 · 本地运行，不上传密钥</span>
+        <a href="https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/rich-media.html" target="_blank" rel="noreferrer">富媒体文档 →</a>
+      </footer>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" id="settingsModal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">CONNECTION</span>
+          <h3 id="settingsTitle">连接设置</h3>
+        </div>
+        <button class="icon-btn" id="closeSettings" type="button" aria-label="关闭">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-bot" id="settingsBot">
+          <div class="settings-avatar">满</div>
+          <div>
+            <strong id="settingsBotName">小满</strong>
+            <span id="settingsBotState">凭据已配置</span>
+          </div>
+          <a id="settingsShareLink" class="text-btn" href="#" target="_blank" rel="noreferrer">添加机器人 ↗</a>
+        </div>
+        <label class="field-label" for="appIdInput">AppID</label>
+        <input id="appIdInput" class="text-input mono" type="text" inputmode="numeric" autocomplete="off">
+        <label class="field-label" for="appSecretInput">AppSecret</label>
+        <input id="appSecretInput" class="text-input mono" type="password" autocomplete="new-password" placeholder="留空则保持已保存的密钥">
+        <p class="field-help">密钥只保存在本机 <code>data/config.json</code>（权限 600），不会发送给浏览器。</p>
+
+        <div class="settings-divider"></div>
+        <label class="switch-line" for="autoCaptureToggle">
+          <span class="switch">
+            <input id="autoCaptureToggle" type="checkbox" checked>
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </span>
+          <span>
+            <b>自动捕获 OpenID</b>
+            <small>保持 WebSocket 监听，收到消息后自动填入发送目标</small>
+          </span>
+        </label>
+        <div class="settings-actions">
+          <button class="text-btn" id="testBtn" type="button">测试连接</button>
+          <button class="save-btn" id="saveSettings" type="button">保存设置</button>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <span>Token 由服务端获取并缓存，前端只接触发送结果。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+name: ai-companion
+
+services:
+  # ── QQ 协议端（首次启动需扫码登录）────────────────────────────
+  napcat:
+    # 生产别长期跟 latest：NapCat 发版快，自动 pull 到有问题的版本会表现为
+    # "某天开始机器人老掉线"。把当前验证正常的镜像钉死在 .env 里：
+    #   sudo docker inspect --format '{{index .RepoDigests 0}}' napcat
+    #   NAPCAT_IMAGE=mlikiowa/napcat-docker@sha256:xxxx    # 或明确的版本 tag
+    image: ${NAPCAT_IMAGE:-mlikiowa/napcat-docker:latest}
+    container_name: napcat
+    restart: unless-stopped
+    # 给 QQ 进程设上限：宿主机只有 3.6G，不设限时 OOM killer 会随机杀容器
+    mem_limit: 1024m
+    environment:
+      - NAPCAT_UID=1000
+      - NAPCAT_GID=1000
+    ports:
+      # 只绑回环，不对公网暴露
+      - "127.0.0.1:3001:3001"   # OneBot v11 WebSocket
+      - "127.0.0.1:6099:6099"   # NapCat WebUI（扫码用）
+    volumes:
+      - ./data/napcat/config:/app/napcat/config
+      - ./data/napcat/qq:/app/.config/QQ
+      # 二维码落盘给 qqbot 读取（账号管理页展示）
+      - ./data/napcat/cache:/app/napcat/cache
+    shm_size: "256m"
+
+  # ── 图片安全预筛（CPU 推理）──────────────────────────────────
+  guard:
+    build:
+      context: ../..
+      dockerfile: deploy/linux/guard/Dockerfile
+    container_name: imageguard
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - GUARD_USE_GPU=${GUARD_USE_GPU:-0}
+      - GUARD_MODEL_DIR=/models/hf
+      - GUARD_ONNX_DIR=/app/models
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data/guard/models:/app/models   # 放 clip_vision.onnx / clip_text.onnx / nsfw.onnx
+      - ./data/guard/hf:/models/hf        # HF 缓存（transformers 预处理用）
+    ports:
+      - "127.0.0.1:8081:8081"
+    mem_limit: 1800m
+    healthcheck:
+      # 定期访问 /health，同时起到模型预热作用（首次请求会加载模型）
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=60).read()"]
+      interval: 60s
+      timeout: 65s
+      start_period: 120s
+      retries: 3
+
+  # ── 元搜索（百度/必应/搜狗）──────────────────────────────────
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    expose:
+      - "8080"
+    mem_limit: 512m
+  # ── qqbot 与 NapCat 之间的 WebSocket 缓冲代理 ──────────────
+  wsproxy:
+    build: ./wsproxy
+    container_name: wsproxy
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=3002
+      - UPSTREAM=ws://napcat:3001
+      - MAX_BUFFER=500
+      - MAX_AGE_MS=300000
+      - DATA_DIR=/data
+      - ALERT_QQ=${ALERT_QQ:-0}
+    expose:
+      - "3002"
+    volumes:
+      - ./data/wsproxy:/data
+    depends_on:
+      - napcat
+    mem_limit: 128m
+  # ── 机器人本体（Spring Boot + 内置前端）──────────────────────
+  qqbot:
+    build:
+      context: ../..
+      dockerfile: deploy/linux/Dockerfile.qqbot
+    container_name: qqbot
+    mem_limit: 1200m
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=-Xms256m -Xmx768m -Dfile.encoding=UTF-8
+      - NAPCAT_WS_URL=ws://wsproxy:3002
+      - IMAGE_GUARD_URL=http://guard:8081
+      - ACCOUNT_HOST_DIR=/srv/qqbot/deploy/linux/data/napcat-accounts
+      - ACCOUNT_COMPOSE_NETWORK=ai-companion_default
+    depends_on:
+      - napcat
+      - guard
+    volumes:
+      - ./data/qqbot:/app/data
+      - ./data/logs:/app/logs
+      # 读取 NapCat 二维码（账号管理）
+      - ./data/napcat/cache:/app/napcat-cache:ro
+      # 多账号：每个实例的配置/二维码目录（qqbot 需读写以准备目录、读取二维码）
+      - ./data/napcat-accounts:/app/napcat-accounts
+      # 允许控制 NapCat 容器（重启/停用），仅本机
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  # ── 可选：自动 HTTPS 反代（有域名时启用）──────────────────────
+  # 反向代理：对外 80（无域名时），有域名后自动 HTTPS
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    mem_limit: 256m
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../site:/srv/site:ro
+      - ./data/caddy:/data
+    depends_on:
+      - qqbot

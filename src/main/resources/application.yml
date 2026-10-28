@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-companion
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 35MB
+  # 从仓库根目录的 .env 读取敏感配置（.env 已被 .gitignore 排除）
+  jackson:
+    default-property-inclusion: non_null
+
+qqbot:
+  napcat:
+    ws-url: ${NAPCAT_WS_URL:ws://127.0.0.1:3001}
+    access-token: ${NAPCAT_ACCESS_TOKEN:}
+    self-id: ${BOT_QQ_ID:0}
+  llm:
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    temperature: 1.0
+    max-tokens: 300
+    history-rounds: 10
+  persona:
+    name: ${BOT_NAME:小满}
+  # 回复形态：像人发微信（拆条 + 打字延迟）
+  reply:
+    max-chars: ${REPLY_MAX_CHARS:60}
+    split-delay-ms: ${REPLY_SPLIT_DELAY_MS:1200}
+    typing-ms: ${REPLY_TYPING_MS:600}
+    adaptive: ${REPLY_ADAPTIVE:true}
+  admin:
+    password: ${ADMIN_PASSWORD:}
+    session-ttl-days: 7
+    daily-budget: ${DAILY_BUDGET:5.0}
+  # 聊天语音：chat-probability 是随机发语音的概率；对方明确要语音时另有额度（见 ChatVoiceReplier）
+  voice:
+    chat-probability: ${VOICE_CHAT_PROBABILITY:0.2}      # 没被点名、模型也没标记时的日常概率
+    explicit-probability: ${VOICE_EXPLICIT_PROBABILITY:0.9}  # 对方点名要语音
+    mark-probability: ${VOICE_MARK_PROBABILITY:0.7}          # 模型加了 [[语音]]
+    daily-limit: ${VOICE_DAILY_LIMIT:3}
+  image:
+    enabled: true
+    max-per-message: 3
+    daily-limit: 30
+    max-bytes: 8388608
+    max-edge: 1024
+    jpeg-quality: 0.8
+    vision-model: ${VISION_MODEL:deepseek-chat}
+    guard-url: ${IMAGE_GUARD_URL:http://127.0.0.1:8081}
+    guard-enabled: true
+    guard-timeout-ms: ${GUARD_TIMEOUT_MS:20000}
+  # 白名单用环境变量 QQBOT_WHITELIST=123456,789012 配置；留空表示不限制
+
+logging:
+  level:
+    com.qqbot: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{20} - %msg%n"

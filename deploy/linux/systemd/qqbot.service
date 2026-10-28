@@ -1,0 +1,19 @@
+[Unit]
+Description=AI Companion QQ bot
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qqbot
+WorkingDirectory=/opt/qqbot
+EnvironmentFile=/opt/qqbot/.env
+Environment=TZ=Asia/Shanghai
+ExecStart=/usr/bin/java -Xms256m -Xmx512m -Dfile.encoding=UTF-8 -jar /opt/qqbot/qqbot.jar --server.port=8080
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/qqbot/logs/qqbot.out.log
+StandardError=append:/opt/qqbot/logs/qqbot.err.log
+
+[Install]
+WantedBy=multi-user.target

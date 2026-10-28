@@ -1,0 +1,74 @@
+# Java
+/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+.npm-cache/
+web/.npm-cache/
+web/node_modules/
+web/dist/
+web/.vite/
+npm-debug.log*
+
+# 运行数据
+/data/
+*.db
+*.db-shm
+*.db-wal
+/logs/
+*.log
+
+# 密钥与本地配置
+.env
+.env.*
+!.env.example
+config.local.yaml
+application-local.yml
+
+# 工具二进制（体积大，按需自行放置）
+tools/*.exe
+tools/*.dll
+
+# 本地 SSH 密钥（部署公钥私钥，绝不入库）
+.ssh/
+*.pem
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.settings/
+.classpath
+.project
+
+# 系统
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
+
+# 本地 ONNX 模型（体积大，按需导出）
+guard/models/
+.tmp/
+# 前端构建产物（由 scripts/build-all.bat 生成，不入库）
+src/main/resources/static/*
+!src/main/resources/static/.gitkeep
+
+# Linux 部署本地数据
+deploy/linux/data/
+
+# 前端生产构建配置（非密钥，需入库）
+!web/.env.production
+
+# 临时二维码截图
+napcat-login-qr*.png
+
+# 扫码登录二维码（临时文件，含登录凭据，不要入库）
+/napcat-qr.png
+/qq-*.png

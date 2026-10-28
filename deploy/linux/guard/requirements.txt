@@ -1,0 +1,9 @@
+# Linux 版：用 onnxruntime（CPU）替代 Windows 的 onnxruntime-directml
+onnxruntime>=1.18
+transformers>=5.0
+pillow
+fastapi
+uvicorn[standard]
+python-multipart
+rapidocr-onnxruntime
+numpy

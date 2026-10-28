@@ -1,0 +1,13 @@
+# 运行时（GPU 走 DirectML，不依赖 CUDA）
+onnxruntime-directml>=1.24
+transformers>=5.0
+pillow
+fastapi
+uvicorn
+python-multipart
+rapidocr-onnxruntime
+numpy
+
+# 仅用于导出 ONNX（一次性，可后装）
+onnx
+torch==2.9.1

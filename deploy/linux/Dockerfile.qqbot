@@ -1,0 +1,25 @@
+FROM eclipse-temurin:21-jre
+
+ENV TZ=Asia/Shanghai \
+    LANG=C.UTF-8
+
+# ffmpeg：语音克隆的转码用到（silk 由 NapCat 处理）
+# 国内镜像加速（Ubuntu apt）
+RUN if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then \
+      sed -i 's|archive.ubuntu.com|mirrors.tencentyun.com|g; s|security.ubuntu.com|mirrors.tencentyun.com|g' /etc/apt/sources.list.d/ubuntu.sources; \
+    fi; \
+    if [ -f /etc/apt/sources.list ]; then \
+      sed -i 's|archive.ubuntu.com|mirrors.tencentyun.com|g; s|security.ubuntu.com|mirrors.tencentyun.com|g' /etc/apt/sources.list; \
+    fi
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg curl \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY target/qqbot.jar /app/app.jar
+
+ENV JAVA_OPTS="-Xms256m -Xmx512m -Dfile.encoding=UTF-8"
+EXPOSE 8080
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar --server.port=8080"]
