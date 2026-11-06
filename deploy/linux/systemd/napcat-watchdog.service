@@ -1,0 +1,9 @@
+[Unit]
+Description=NapCat offline watchdog (restart + QR mail)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /srv/qqbot/deploy/linux/napcat-watchdog.py
+TimeoutStartSec=300
