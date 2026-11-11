@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>暖屿插件商店 · 审核后台</title>
+<link rel="stylesheet" href="/admin/admin.css" />
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <h1>插件商店 · 审核后台</h1>
+    <span class="hint">通过的包才会进公开索引，部署者才看得到</span>
+  </div>
+  <div class="auth" id="loginBox">
+    <input id="password" type="password" placeholder="管理密码" autocomplete="current-password" />
+    <input id="code" inputmode="numeric" maxlength="6" placeholder="验证码（6位）" autocomplete="one-time-code" />
+    <button id="login" class="btn">登录</button>
+  </div>
+  <div class="auth" id="sessionBox" hidden>
+    <span class="hint">已登录</span>
+    <button id="refresh" class="btn ghost">刷新</button>
+    <button id="logout" class="btn ghost">退出</button>
+  </div>
+</header>
+
+<section class="stats" id="stats"></section>
+
+<main id="list" class="list">
+  <p class="empty">登录后进入待审队列</p>
+</main>
+
+<template id="cardTpl">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <h2 class="title"></h2>
+        <p class="meta"></p>
+      </div>
+      <div class="actions">
+        <button class="btn ok">通过</button>
+        <button class="btn danger">驳回</button>
+      </div>
+    </div>
+    <div class="grid">
+      <div><span class="k">插件 id</span><code class="v id"></code></div>
+      <div><span class="k">版本</span><code class="v version"></code></div>
+      <div><span class="k">运行形态</span><span class="v runtime"></span></div>
+      <div><span class="k">宿主最低版本</span><span class="v minhost"></span></div>
+      <div><span class="k">作者</span><span class="v author"></span></div>
+      <div><span class="k">提交时间</span><span class="v submitted"></span></div>
+      <div><span class="k">包大小</span><span class="v size"></span></div>
+      <div><span class="k">sha256</span><code class="v sha"></code></div>
+    </div>
+    <details>
+      <summary>权限与联网</summary>
+      <pre class="perm"></pre>
+    </details>
+    <details>
+      <summary>README</summary>
+      <pre class="readme"></pre>
+    </details>
+    <details>
+      <summary>manifest 全量</summary>
+      <pre class="manifest"></pre>
+    </details>
+    <div class="review-row">
+      <input class="note" placeholder="驳回理由 / 审核备注（通过也可填）" />
+      <button class="btn ghost revoke">加入吊销名单</button>
+    </div>
+  </article>
+</template>
+
+<script src="/admin/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+# 插件灰度测试实例（staging）
+#
+# 目的：在线上机器上跑一份「带插件能力」的暖屿，用来真实聊天测试；
+#      生产容器（qqbot / napcat / wsproxy / guard / caddy）**一个都不碰**。
+#
+# 关键隔离：
+#   - 独立 compose project（ai-companion-staging），与生产不共享生命周期
+#   - 独立数据目录 data-staging/（库、插件、日志全分开，测试聊天不进生产记忆）
+#   - 独立端口：QQ WS 3101、WebUI 6199、后台 8082（全部只绑 127.0.0.1）
+#   - 独立 QQ 账号：用测试号扫码，绝不复用「小满」的账号目录
+#   - 不挂 docker.sock（staging 不需要管容器，少一个风险面）
+#
+# 启动：
+#   cd /srv/qqbot/deploy/linux
+#   docker compose -f docker-compose.staging.yml up -d
+#   然后到 127.0.0.1:8082 的「机器人账号」页扫码登录测试号
+#
+# 访问后台（不暴露公网）：
+#   ssh -L 8082:127.0.0.1:8082 user@<server>   # 本地打开 http://127.0.0.1:8082
+#
+# 关闭：docker compose -f docker-compose.staging.yml down
+
+name: ai-companion-staging
+
+services:
+  napcat-staging:
+    image: ${NAPCAT_IMAGE:-mlikiowa/napcat-docker:latest}
+    container_name: napcat-staging
+    restart: unless-stopped
+    # 比生产小一档：staging 只服务测试，够登录和收发即可
+    mem_limit: 800m
+    environment:
+      - NAPCAT_UID=1000
+      - NAPCAT_GID=1000
+    ports:
+      - "127.0.0.1:3101:3001"   # OneBot v11 WS（staging 专用）
+      - "127.0.0.1:6199:6099"   # WebUI（扫码）
+    volumes:
+      - ./data-staging/napcat/config:/app/napcat/config
+      - ./data-staging/napcat/qq:/app/.config/QQ
+      - ./data-staging/napcat/cache:/app/napcat/cache
+    shm_size: "256m"
+
+  wsproxy-staging:
+    build: ./wsproxy
+    container_name: wsproxy-staging
+    restart: unless-stopped
+    environment:
+      - PORT=3002
+      - UPSTREAM=ws://napcat-staging:3001
+      - MAX_BUFFER=500
+      - MAX_AGE_MS=300000
+      - DATA_DIR=/data
+    expose:
+      - "3002"
+    volumes:
+      - ./data-staging/wsproxy:/data
+    depends_on:
+      - napcat-staging
+    mem_limit: 96m
+
+  qqbot-staging:
+    build:
+      context: ../..
+      dockerfile: deploy/linux/Dockerfile.qqbot
+    container_name: qqbot-staging
+    restart: unless-stopped
+    mem_limit: 640m
+    environment:
+      - TZ=Asia/Shanghai
+      - JAVA_OPTS=-Xms192m -Xmx384m -Dfile.encoding=UTF-8
+      - NAPCAT_WS_URL=ws://wsproxy-staging:3002
+      # 图片预筛复用生产已在跑的 guard（只读调用，不影响它）
+      - IMAGE_GUARD_URL=http://guard:8081
+      # ── 插件：只有 staging 打开 ──────────────────────────────
+      - PLUGIN_ENABLED=true
+      - PLUGIN_DIR=/app/data/plugins
+      - PLUGIN_STORE_URL=
+      - PLUGIN_LOCAL_ENABLED=false
+      # 测试号单独一份库，不碰生产记忆
+      - QQBOT_WHITELIST=
+    volumes:
+      - ./data-staging/qqbot:/app/data
+      - ./data-staging/logs:/app/logs
+      - ./data-staging/plugins:/app/data/plugins
+    ports:
+      - "127.0.0.1:8082:8080"
+    networks:
+      - default
+      # 只为了按容器名访问 guard；不加入生产的其它服务管理
+      - ai-companion_default
+
+networks:
+  ai-companion_default:
+    external: true

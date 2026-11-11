@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 2,
+  "id": "menran.sing",
+  "name": "唱歌",
+  "version": "1.0.2",
+  "apiVersion": 1,
+  "runtime": "data",
+  "description": "点歌就唱，内置三段公版旋律；没说歌名就随机唱一首",
+  "author": {
+    "name": "menran",
+    "url": "https://example.com"
+  },
+  "license": "CC0-1.0",
+  "tags": [
+    "娱乐",
+    "音乐"
+  ],
+  "readme": "README.md",
+  "compat": {
+    "minHostVersion": "1.0.0",
+    "maxHostVersion": null
+  },
+  "intent": {
+    "id": "music.sing",
+    "examples": [
+      "唱首歌",
+      "唱个歌",
+      "来一首",
+      "想听你唱",
+      "给我唱一段吧",
+      "唱一个吧",
+      "来一段",
+      "唱一段",
+      "我要听歌",
+      "想听歌"
+    ],
+    "exclusive": false
+  },
+  "actions": [
+    {
+      "name": "sing",
+      "description": "为用户唱一首歌。用户没说歌名就随机唱一首。",
+      "params": {
+        "song": {
+          "type": "string",
+          "required": false,
+          "description": "歌名，没说就随机"
+        }
+      },
+      "returns": [
+        "audio"
+      ],
+      "timeoutMs": 15000
+    }
+  ],
+  "voice": {
+    "strategy": "audio"
+  },
+  "catalog": {
+    "key": "song",
+    "match": [
+      "小星星",
+      "两只老虎",
+      "生日快乐"
+    ],
+    "entries": [
+      {
+        "value": "小星星",
+        "aliases": [
+          "小星星",
+          "一闪一闪亮晶晶",
+          "twinkle"
+        ],
+        "file": "assets/voice/twinkle.wav",
+        "durationMs": 8000
+      },
+      {
+        "value": "两只老虎",
+        "aliases": [
+          "两只老虎",
+          "tigers"
+        ],
+        "file": "assets/voice/tigers.wav",
+        "durationMs": 6400
+      },
+      {
+        "value": "生日快乐",
+        "aliases": [
+          "生日快乐",
+          "生日歌",
+          "birthday"
+        ],
+        "file": "assets/voice/birthday.wav",
+        "durationMs": 7000
+      }
+    ]
+  },
+  "permissions": {
+    "memory": {
+      "write": true
+    },
+    "localService": null
+  },
+  "memory": {
+    "policy": "episodic",
+    "type": "relation",
+    "keyTemplate": "唱过:{song}",
+    "valueTemplate": "《{song}》，给ta唱了一遍",
+    "importance": 0.8
+  },
+  "quota": {
+    "perUserPerDay": 6,
+    "globalPerHour": 60
+  },
+  "changelog": "CHANGELOG.md"
+}

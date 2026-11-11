@@ -1,0 +1,15 @@
+# 暖屿 Warm Isle
+
+> 一个会记住你的 QQ AI 陪伴机器人。长期记忆、遗忘曲线、记忆星图、语音、表情包、知识库与插件商店。
+> 官网：https://web.example.com
+> 博客：https://web.example.com/blog/
+> 代码：https://gitee.com/menran/warm_isle
+> QQ 群：601921002
+
+## 关键页面
+
+- [插件开发手册](https://web.example.com/blog/post/warm-isle-plugin-dev-manual)
+- [项目介绍](https://web.example.com/blog/post/what-is-warm-isle)
+- [插件商店架构](https://web.example.com/blog/post/plugin-store-architecture)
+- [全部文章](https://web.example.com/blog/)
+- [RSS](https://web.example.com/blog/rss.xml)

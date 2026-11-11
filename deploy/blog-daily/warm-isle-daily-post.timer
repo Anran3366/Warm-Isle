@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Warm Isle daily blog post at 10:00 Asia/Shanghai
+
+[Timer]
+OnCalendar=*-*-* 10:00:00 Asia/Shanghai
+Persistent=true
+RandomizedDelaySec=90
+
+[Install]
+WantedBy=timers.target

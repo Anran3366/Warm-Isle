@@ -1,0 +1,11 @@
+store.example.com {
+    encode zstd gzip
+    handle /api/* { reverse_proxy 127.0.0.1:3500 }
+    handle /admin/* { reverse_proxy 127.0.0.1:3500 }
+    handle /* { reverse_proxy 127.0.0.1:3500 }
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        Content-Security-Policy "default-src 'self'; img-src 'self' data: https:"
+    }
+}

@@ -1,0 +1,76 @@
+# 插件灰度测试实例（staging）
+#
+# 与生产（/srv/qqbot/deploy/linux/docker-compose.yml）完全隔离：
+#   - 独立 compose project（ai-companion-staging）
+#   - 独立数据目录 ./data-staging/（库、插件、日志分开，测试聊天不进生产记忆）
+#   - 独立端口：NapCat WS 3101、NapCat WebUI 6199、后台 8082（全部只绑 127.0.0.1）
+#   - 不挂 docker.sock
+#   - 只通过外部网络 ai-companion_default 借用生产已跑的 guard（只读调用）
+#
+# 生产容器（qqbot/napcat/wsproxy/guard/caddy）**不重启、不改配置、不共享卷**。
+#
+# 内存：宿主机 3.6G，生产常驻约 1.7G，这里硬顶 1.05G。
+# 两个容器都设 oom_score_adj=500：万一真触发 OOM killer，先杀 staging，不动生产。
+
+name: ai-companion-staging
+
+services:
+  napcat-staging:
+    image: ${NAPCAT_IMAGE:-mlikiowa/napcat-docker:latest}
+    container_name: napcat-staging
+    restart: unless-stopped
+    mem_limit: 520m
+    oom_score_adj: 500
+    environment:
+      - NAPCAT_UID=1000
+      - NAPCAT_GID=1000
+    ports:
+      - "127.0.0.1:3101:3001"   # OneBot v11 WebSocket（qqbot-staging 走容器网络直连，也可本地调试）
+      - "127.0.0.1:6199:6099"   # NapCat WebUI（扫码 / 配 WS 用）
+    volumes:
+      - ./data-staging/napcat/config:/app/napcat/config
+      - ./data-staging/napcat/qq:/app/.config/QQ
+      - ./data-staging/napcat/cache:/app/napcat/cache
+    shm_size: "256m"
+
+  qqbot-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qqbot-staging:local
+    container_name: qqbot-staging
+    restart: unless-stopped
+    mem_limit: 560m
+    oom_score_adj: 500
+    # 模型 key 等复用生产 .env（只读挂载，不复制、不改动）
+    env_file:
+      - .env
+    environment:
+      - TZ=Asia/Shanghai
+      # 直连 staging NapCat，不经 wsproxy（测试量极小，不需要缓冲代理）
+      - NAPCAT_WS_URL=ws://napcat-staging:3001
+      - NAPCAT_CONTAINER=napcat-staging
+      - NAPCAT_INNER_WS_URL=ws://napcat-staging:3001
+      # staging 的 NapCat 不设 token（只在内网+回环），显式清空避免继承生产 token
+      - NAPCAT_ACCESS_TOKEN=
+      - IMAGE_GUARD_URL=http://guard:8081
+      # 插件链路只在这里打开
+      - PLUGIN_ENABLED=true
+      - PLUGIN_DIR=/app/data/plugins
+      - PLUGIN_STORE_URL=
+      - BOT_NAME=小满(staging)
+      # 生产 .env 里的 BOT_QQ_ID 不能带进 staging，避免任何"以生产账号自居"的分支
+      - BOT_QQ_ID=0
+      - JAVA_OPTS=-Xms128m -Xmx320m -Dfile.encoding=UTF-8
+    volumes:
+      - ./data-staging/qqbot:/app/data
+      - ./data-staging/logs:/app/logs
+    ports:
+      - "127.0.0.1:8082:8080"
+    networks:
+      - default
+      - ai-companion_default
+
+networks:
+  ai-companion_default:
+    external: true

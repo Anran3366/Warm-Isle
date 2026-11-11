@@ -1,0 +1,15 @@
+[Unit]
+Description=Warm Isle daily blog post
+After=network-online.target warm-isle-blog.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=blogapp
+Group=blogapp
+WorkingDirectory=/opt/warm-isle-blog/app/daily
+EnvironmentFile=/etc/warm-isle-blog.env
+Environment=TZ=Asia/Shanghai
+ExecStart=/usr/bin/node /opt/warm-isle-blog/app/daily/daily-post.mjs
+TimeoutStartSec=300
+Nice=10

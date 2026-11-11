@@ -1,0 +1,31 @@
+services:
+  nuanyu-store:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: nuanyu-store:1
+    container_name: nuanyu-store
+    restart: always
+    environment:
+      STORE_HOST: 0.0.0.0
+      PORT: 3500
+      STORE_DATA_DIR: /data
+      STORE_PUBLIC_BASE: ${STORE_PUBLIC_BASE:-http://nuanyu-store:3500}
+      STORE_ADMIN_TOKEN: ${STORE_ADMIN_TOKEN}
+      STORE_IP_SECRET: ${STORE_IP_SECRET}
+    volumes:
+      - /opt/nuanyu-store/data:/data
+    ports:
+      - "127.0.0.1:3500:3500"
+    networks:
+      - ai-companion_default
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  ai-companion_default:
+    external: true

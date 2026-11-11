@@ -1,0 +1,11 @@
+[Unit]
+Description=Auto deploy qqbot from Gitee (build & restart)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/qqbot
+Environment=QQBOT_ROOT=/srv/qqbot
+ExecStart=/srv/qqbot/deploy/linux/auto-deploy.sh
+TimeoutStartSec=1800

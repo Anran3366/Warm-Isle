@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 2,
+  "id": "demo.tarot",
+  "name": "塔罗一抽",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "runtime": "prompt",
+  "description": "抽一张塔罗牌，给你一句今天的话",
+  "author": { "name": "demo" },
+  "license": "MIT",
+  "tags": ["娱乐", "测试"],
+  "compat": { "minHostVersion": "1.0.0" },
+  "intent": {
+    "id": "fun.tarot",
+    "examples": ["抽张塔罗牌", "帮我占卜一下", "今天运势怎么样", "来一张牌看看", "给我测测塔罗"]
+  },
+  "actions": [
+    {
+      "name": "draw",
+      "description": "抽一张牌",
+      "params": {
+        "topic": { "type": "string", "required": false, "description": "想问的事" }
+      },
+      "returns": ["text"]
+    }
+  ],
+  "prompt": { "system": "prompts/tarot.md", "maxTokens": 600, "temperature": 0.7 },
+  "data": { "deck": "data/cards.json" },
+  "variables": ["date", "deck", "topic"],
+  "permissions": {}
+}

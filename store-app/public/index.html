@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>暖屿插件商店</title>
+<style>
+  :root { --bg:#f7f5f0; --card:#fff; --line:#e6e2d8; --ink:#2c2c2a; --muted:#6b6a63; --accent:#185fa5; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif; }
+  main { max-width:680px; margin:48px auto; padding:0 20px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  p.sub { color:var(--muted); margin:0 0 28px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; margin-bottom:14px; }
+  .card h2 { margin:0 0 4px; font-size:15px; }
+  .card p { margin:0 0 10px; color:var(--muted); font-size:13px; }
+  a.go { color:var(--accent); text-decoration:none; font-size:14px; }
+  code { background:#faf9f6; border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-size:12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>暖屿插件商店</h1>
+  <p class="sub">给「暖屿」机器人装新能力的地方。所有上架的包都经过人工审核与签名校验。</p>
+
+  <div class="card">
+    <h2>我是机器人部署者</h2>
+    <p>插件的浏览、安装、启用都在你自己机器人的管理后台里（插件页 → 商店 Tab），商店地址填 <code>https://store.example.com</code> 即可。这里不用操作。</p>
+  </div>
+
+  <div class="card">
+    <h2>我想发布插件</h2>
+    <p>不需要注册作者账号。在你自己的暖屿后台「插件商店 → 上架插件」上传 zip，包会进入商店所有者的待审队列；审核通过后，其他部署实例刷新商店即可看到。</p>
+    <a class="go" href="https://web.example.com/blog/post/warm-isle-plugin-dev-manual" target="_blank" rel="noopener">看插件开发手册 →</a>
+  </div>
+
+  <div class="card">
+    <h2>接口与密钥</h2>
+    <p>公开索引 <code>/api/v1/index.json</code> · 吊销名单 <code>/api/v1/revocations.json</code> · 验签公钥 <code>/api/v1/pubkey</code>。审核后台仅限所有者经内网通道进入。</p>
+  </div>
+</main>
+</body>
+</html>

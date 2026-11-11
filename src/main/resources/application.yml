@@ -1,0 +1,101 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ai-companion
+  servlet:
+    multipart:
+      max-file-size: 30MB
+      max-request-size: 35MB
+  # 从仓库根目录的 .env 读取敏感配置（.env 已被 .gitignore 排除）
+  jackson:
+    default-property-inclusion: non_null
+
+qqbot:
+  napcat:
+    ws-url: ${NAPCAT_WS_URL:ws://127.0.0.1:3001}
+    access-token: ${NAPCAT_ACCESS_TOKEN:}
+    self-id: ${BOT_QQ_ID:0}
+    # 首次启动登记默认账号时用（staging 指向自己的协议端容器，避免连到生产）
+    default-backend: ${BOT_DEFAULT_BACKEND:napcat}
+    container: ${NAPCAT_CONTAINER:napcat}
+    inner-ws-url: ${NAPCAT_INNER_WS_URL:ws://napcat:3001}
+  llm:
+    base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:}
+    model: ${DEEPSEEK_MODEL:deepseek-chat}
+    temperature: 1.0
+    max-tokens: 300
+    history-rounds: 10
+  persona:
+    name: ${BOT_NAME:小满}
+  prompt:
+    # 动态拼装：人设按【】切片、规则按场景触发；false 回到全量注入
+    dynamic: ${PROMPT_DYNAMIC:true}
+  # 回复形态：像人发微信（拆条 + 打字延迟）
+  reply:
+    max-chars: ${REPLY_MAX_CHARS:60}
+    split-delay-ms: ${REPLY_SPLIT_DELAY_MS:1200}
+    typing-ms: ${REPLY_TYPING_MS:600}
+    adaptive: ${REPLY_ADAPTIVE:true}
+  admin:
+    password: ${ADMIN_PASSWORD:}
+    session-ttl-days: 7
+    daily-budget: ${DAILY_BUDGET:5.0}
+  # 聊天语音：chat-probability 是随机发语音的概率；对方明确要语音时另有额度（见 ChatVoiceReplier）
+  voice:
+    chat-probability: ${VOICE_CHAT_PROBABILITY:0.2}      # 没被点名、模型也没标记时的日常概率
+    explicit-probability: ${VOICE_EXPLICIT_PROBABILITY:0.9}  # 对方点名要语音
+    mark-probability: ${VOICE_MARK_PROBABILITY:0.7}          # 模型加了 [[语音]]
+    daily-limit: ${VOICE_DAILY_LIMIT:3}
+  image:
+    enabled: true
+    max-per-message: 3
+    daily-limit: 30
+    max-bytes: 8388608
+    max-edge: 1024
+    jpeg-quality: 0.8
+    vision-model: ${VISION_MODEL:deepseek-chat}
+    guard-url: ${IMAGE_GUARD_URL:http://127.0.0.1:8081}
+    guard-enabled: true
+    guard-timeout-ms: ${GUARD_TIMEOUT_MS:20000}
+  # 插件：开箱即用（装包即有，没装插件时路由表为空、零额外开销）。
+  # 想彻底关掉整条链路（含后台菜单与商店拉取）配 PLUGIN_ENABLED=false。
+  plugin:
+    enabled: ${PLUGIN_ENABLED:true}
+    dir: ${PLUGIN_DIR:./data/plugins}
+    host-version: ${HOST_VERSION:1.0.0}
+    max-sync-ms: 20000
+    # L3 语义意图召回（L1/L2 未命中时用向量比较 intent.examples，服务不可用自动降级）
+    semantic-enabled: ${PLUGIN_SEMANTIC_ENABLED:true}
+    semantic-threshold: ${PLUGIN_SEMANTIC_THRESHOLD:0.80}
+    semantic-max-chars: ${PLUGIN_SEMANTIC_MAX_CHARS:40}
+    semantic-prefilter: ${PLUGIN_SEMANTIC_PREFILTER:true}
+    # 隐私模式：只允许 data / prompt 型，hosted / local 一律不触发（文档 §7.7）
+    privacy-mode: ${PLUGIN_PRIVACY_MODE:false}
+    # 升级后旧版本目录保留天数，用于一键回滚（文档 §7.4）
+    keep-old-versions-days: ${PLUGIN_KEEP_OLD_VERSIONS_DAYS:7}
+    store:
+      # 官方商店 URL、Ed25519 公钥、强制验签都写死在 PluginStoreClient 常量里，
+      # 这里不提供配置项：部署者不能指向自建商店，也不能关闭验签。
+      # 仅商店所有者（A 主机）填内网地址，审核/发布代理用；其他部署留空。
+      admin-url: ${PLUGIN_STORE_ADMIN_URL:}
+      connect-timeout-ms: 3000
+      read-timeout-ms: 10000
+      index-ttl-seconds: 900
+      # 只有商店所有者的实例需要配置；其他部署留空（只发布，不审核）
+      admin-token: ${PLUGIN_STORE_ADMIN_TOKEN:}
+      publisher: ${PLUGIN_STORE_PUBLISHER:}
+    limits:
+      per-user-per-day: 10
+      global-per-hour: 60
+      circuit-failures: 5
+      circuit-open-seconds: 300
+  # 白名单用环境变量 QQBOT_WHITELIST=123456,789012 配置；留空表示不限制
+
+logging:
+  level:
+    com.qqbot: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level %logger{20} - %msg%n"

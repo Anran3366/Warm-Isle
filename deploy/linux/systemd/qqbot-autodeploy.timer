@@ -1,0 +1,10 @@
+[Unit]
+Description=Check Gitee every 5 minutes for qqbot updates
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
