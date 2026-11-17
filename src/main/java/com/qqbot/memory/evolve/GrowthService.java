@@ -131,7 +131,8 @@ public class GrowthService {
     private boolean similarExists(long qqId, String content) {
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement(
-                     "SELECT content FROM growth_notes WHERE qq_id=? AND status IN ('pending','approved')")) {
+                     "SELECT content FROM growth_notes WHERE qq_id=? "
+                             + "AND status IN ('pending','approved','rejected')")) {
             ps.setLong(1, qqId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
