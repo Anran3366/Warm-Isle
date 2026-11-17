@@ -121,6 +121,18 @@
             <el-switch v-model="form.reply.adaptive" />
             <span class="form-hint">对方说得少就回得更短</span>
           </el-form-item>
+          <el-form-item label="连发合并">
+            <el-switch v-model="form.reply.debounce" />
+            <el-input-number v-model="form.reply.debounceMs" :min="300" :max="8000" :step="200"
+                             size="small" style="margin-left: 12px" />
+            <span class="form-hint">毫秒：对方连发几条时，等这么久合成一批再回</span>
+          </el-form-item>
+          <el-form-item label="已读不回">
+            <el-switch v-model="form.reply.gate" />
+            <el-input-number v-model="form.reply.gateSkip" :min="0" :max="1" :step="0.05"
+                             :precision="2" size="small" style="margin-left: 12px" />
+            <span class="form-hint">单字/纯表情有这么多概率不回；提问、连发、图片语音不受影响</span>
+          </el-form-item>
           <el-form-item>
             <el-button type="primary" :loading="saving" @click="save">保存设置</el-button>
             <span v-if="isDirty" class="unsaved-hint">有未保存的修改</span>

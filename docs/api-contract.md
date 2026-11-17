@@ -137,6 +137,32 @@
 
 ---
 
+### 4.5 记忆自进化（2026-11-17）
+
+前缀 `/api/memory/evolve`，除 `status` 外都需要 `qqId`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/status` | `{ enabled: true }` |
+| POST | `/toggle?enabled=` | 开关 |
+| GET | `/snapshot?qqId=` | 常驻画像文本 |
+| POST | `/snapshot/rebuild?qqId=` | 重建并返回 |
+| GET | `/recall?qqId=&text=` | 召回预览（含 L0/跟进/忽然想起/表达） |
+| POST | `/reflect?qqId=&force=` | 手动反思，返回 `{insights,lessons,growth,conflicts,profile}` |
+| POST | `/consolidate?qqId=` | 巩固，返回 `{archived,factsOutdated}` |
+| GET | `/profile?qqId=` | `{address,stage,traits,taboos,importantDates,updatedAt}` |
+| POST | `/profile?qqId=` | body 同上；返回保存后的档案 |
+| POST | `/profile/backfill?qqId=` | 确定性回填 |
+| GET | `/timeline?qqId=&limit=` | `{items:[{at,kind,title,detail,status,id}]}` |
+| GET | `/audit?qqId=` | `{conflicts,fading,stale,duplicates,pendingGrowth,pendingExpressions,active}` |
+| GET | `/growth?qqId=&status=` | 成长列表 |
+| POST | `/growth/{id}/approve` / `/reject` | 采纳/拒绝 |
+| GET | `/expressions?qqId=&status=` | 表达列表 |
+| POST | `/expressions/{id}/approve` / `/reject` | 采纳/拒绝 |
+| POST | `/expressions/mine?qqId=&days=` | 手动挖掘 |
+
+星图 `/api/memories/graph` 的节点新增 `evidenceCount`、`conflictCount`、`evidenceIds`；边 `kind` 新增 `evidence`、`conflict`；`meta` 新增 `evidence`、`conflicts`。
+
 ## 5. 表情包
 
 ### GET /api/emoji?page=&size=

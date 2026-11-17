@@ -78,23 +78,37 @@ public class MemoryGraphService {
         LocalDateTime now = LocalDateTime.now();
         Map<Long, String> names = names();
 
-        List<Map<String, Object>> nodes = new ArrayList<>(memories.size());
         Map<Long, Double> strengthById = new HashMap<>();
         int fading = 0;
         Map<String, Integer> byType = new LinkedHashMap<>();
         Set<Long> userIds = new HashSet<>();
+        Set<Long> ids = new HashSet<>();
         for (Memory m : memories) {
             double strength = m.pinned() ? 1.0 : MemoryStrength.effective(m, now);
             strengthById.put(m.id(), strength);
+            ids.add(m.id());
             userIds.add(m.qqId());
             if (!m.pinned() && MemoryStrength.fading(strength) && "active".equals(m.status())) {
                 fading++;
             }
             byType.merge(m.type() == null ? "profile" : m.type(), 1, Integer::sum);
-            nodes.add(node(m, strength, names.getOrDefault(m.qqId(), String.valueOf(m.qqId()))));
+        }
+
+        Map<Long, List<Long>> evidence = evidenceMap(ids);
+        Map<Long, Integer> conflictCount = new HashMap<>();
+        List<Map<String, Object>> conflictEdges = conflictEdges(memories, conflictCount);
+
+        List<Map<String, Object>> nodes = new ArrayList<>(memories.size());
+        for (Memory m : memories) {
+            List<Long> sources = evidence.getOrDefault(m.id(), List.of());
+            nodes.add(node(m, strengthById.getOrDefault(m.id(), 1.0),
+                    names.getOrDefault(m.qqId(), String.valueOf(m.qqId())),
+                    sources.size(), conflictCount.getOrDefault(m.id(), 0), sources));
         }
 
         List<Map<String, Object>> edges = edges(memories, strengthById);
+        int evidenceEdges = evidenceEdges(edges, evidence, ids);
+        edges.addAll(conflictEdges);
 
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("total", memories.size());
@@ -103,6 +117,8 @@ public class MemoryGraphService {
         meta.put("users", userIds.size());
         meta.put("byType", byType);
         meta.put("edges", edges.size());
+        meta.put("evidence", evidenceEdges);
+        meta.put("conflicts", conflictCount.values().stream().mapToInt(Integer::intValue).sum() / 2);
         meta.put("generatedAt", System.currentTimeMillis());
 
         Map<String, Object> body = new LinkedHashMap<>();
@@ -152,7 +168,8 @@ public class MemoryGraphService {
         return m;
     }
 
-    private Map<String, Object> node(Memory m, double strength, String name) {
+    private Map<String, Object> node(Memory m, double strength, String name,
+                                     int evidenceCount, int conflictCount, List<Long> evidenceIds) {
         Map<String, Object> n = new LinkedHashMap<>();
         n.put("id", String.valueOf(m.id()));
         n.put("qqId", String.valueOf(m.qqId()));
@@ -172,7 +189,91 @@ public class MemoryGraphService {
         n.put("lastConfirmed", m.lastConfirmed());
         n.put("fading", !m.pinned() && MemoryStrength.fading(strength));
         n.put("recurMd", m.recurMd());
+        n.put("evidenceCount", evidenceCount);
+        n.put("conflictCount", conflictCount);
+        n.put("evidenceIds", evidenceIds.stream().limit(6).map(String::valueOf).toList());
         return n;
+    }
+
+    /** 证据边：这条记忆是由哪些旧记忆推出来的 */
+    private static int evidenceEdges(List<Map<String, Object>> out, Map<Long, List<Long>> evidence, Set<Long> ids) {
+        Set<String> seen = new HashSet<>();
+        int added = 0;
+        for (Map.Entry<Long, List<Long>> e : evidence.entrySet()) {
+            long memory = e.getKey();
+            if (!ids.contains(memory)) {
+                continue;
+            }
+            int n = 0;
+            for (Long source : e.getValue()) {
+                if (n >= 2 || source == null || !ids.contains(source)) {
+                    break;
+                }
+                if (add(out, seen, memory, source, 0.8, "evidence")) {
+                    added++;
+                    n++;
+                }
+            }
+        }
+        return added;
+    }
+
+    /** 矛盾边：同一个人的同一个 key 出现了不同值 */
+    private static List<Map<String, Object>> conflictEdges(List<Memory> memories, Map<Long, Integer> count) {
+        Map<String, List<Memory>> byKey = new LinkedHashMap<>();
+        for (Memory m : memories) {
+            if (m.key() == null) {
+                continue;
+            }
+            byKey.computeIfAbsent(m.qqId() + "|" + (m.subject() == null ? "user" : m.subject())
+                    + "|" + m.key().toLowerCase(), k -> new ArrayList<>()).add(m);
+        }
+        List<Map<String, Object>> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (List<Memory> group : byKey.values()) {
+            if (group.size() < 2) {
+                continue;
+            }
+            Set<String> values = new HashSet<>();
+            for (Memory m : group) {
+                values.add(m.value() == null ? "" : m.value());
+            }
+            if (values.size() < 2) {
+                continue;
+            }
+            int added = 0;
+            for (int i = 0; i < group.size() && added < 4; i++) {
+                for (int j = i + 1; j < group.size() && added < 4; j++) {
+                    if (add(out, seen, group.get(i).id(), group.get(j).id(), 1.0, "conflict")) {
+                        count.merge(group.get(i).id(), 1, Integer::sum);
+                        count.merge(group.get(j).id(), 1, Integer::sum);
+                        added++;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private Map<Long, List<Long>> evidenceMap(Set<Long> ids) {
+        Map<Long, List<Long>> out = new HashMap<>();
+        if (ids.isEmpty()) {
+            return out;
+        }
+        String sql = "SELECT memory_id, source_memory_id FROM memory_evidence";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                long memory = rs.getLong(1);
+                if (!ids.contains(memory)) {
+                    continue;
+                }
+                out.computeIfAbsent(memory, k -> new ArrayList<>()).add(rs.getLong(2));
+            }
+        } catch (Exception e) {
+            log.debug("读取记忆证据失败: {}", e.getMessage());
+        }
+        return out;
     }
 
     private List<Map<String, Object>> edges(List<Memory> memories, Map<Long, Double> strengthById) {

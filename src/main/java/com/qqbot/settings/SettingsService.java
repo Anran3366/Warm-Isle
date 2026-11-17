@@ -67,6 +67,20 @@ public class SettingsService {
             if (adaptive != null) {
                 props.getReply().setAdaptive(Boolean.parseBoolean(adaptive));
             }
+            String debounce = store.get(PREFIX + "reply.debounce", null);
+            if (debounce != null) {
+                props.getReply().setDebounce(Boolean.parseBoolean(debounce));
+            }
+            props.getReply().setDebounceMs(parseInt(store.get(PREFIX + "reply.debounceMs", null),
+                    (int) props.getReply().getDebounceMs()));
+            props.getReply().setDebounceMaxMs(parseInt(store.get(PREFIX + "reply.debounceMaxMs", null),
+                    (int) props.getReply().getDebounceMaxMs()));
+            String gate = store.get(PREFIX + "reply.gate", null);
+            if (gate != null) {
+                props.getReply().setGate(Boolean.parseBoolean(gate));
+            }
+            props.getReply().setGateSkip(parseDouble(store.get(PREFIX + "reply.gateSkip", null),
+                    props.getReply().getGateSkip()));
             props.getAdmin().setDailyBudget(parseDouble(store.get(PREFIX + "dailyBudget", null),
                     props.getAdmin().getDailyBudget()));
             props.getLlm().setHistoryRounds(parseInt(store.get(PREFIX + "contextRounds", null),
@@ -103,6 +117,20 @@ public class SettingsService {
             if (adaptive != null) {
                 props.getReply().setAdaptive(Boolean.parseBoolean(adaptive));
             }
+            String debounce = store.get(PREFIX + "reply.debounce", null);
+            if (debounce != null) {
+                props.getReply().setDebounce(Boolean.parseBoolean(debounce));
+            }
+            props.getReply().setDebounceMs(parseInt(store.get(PREFIX + "reply.debounceMs", null),
+                    (int) props.getReply().getDebounceMs()));
+            props.getReply().setDebounceMaxMs(parseInt(store.get(PREFIX + "reply.debounceMaxMs", null),
+                    (int) props.getReply().getDebounceMaxMs()));
+            String gate = store.get(PREFIX + "reply.gate", null);
+            if (gate != null) {
+                props.getReply().setGate(Boolean.parseBoolean(gate));
+            }
+            props.getReply().setGateSkip(parseDouble(store.get(PREFIX + "reply.gateSkip", null),
+                    props.getReply().getGateSkip()));
             props.getVoice().setChatProbability(parseDouble(shared.get("voice.chatProbability", null),
                     props.getVoice().getChatProbability()));
             props.getVoice().setDailyLimit(parseInt(shared.get("voice.dailyLimit", null),
@@ -134,6 +162,11 @@ public class SettingsService {
         reply.put("splitDelayMs", props.getReply().getSplitDelayMs());
         reply.put("typingMs", props.getReply().getTypingMs());
         reply.put("adaptive", props.getReply().isAdaptive());
+        reply.put("debounce", props.getReply().isDebounce());
+        reply.put("debounceMs", props.getReply().getDebounceMs());
+        reply.put("debounceMaxMs", props.getReply().getDebounceMaxMs());
+        reply.put("gate", props.getReply().isGate());
+        reply.put("gateSkip", props.getReply().getGateSkip());
         body.put("reply", reply);
         return body;
     }
@@ -166,6 +199,26 @@ public class SettingsService {
             if (reply.get("adaptive") instanceof Boolean b) {
                 props.getReply().setAdaptive(b);
                 store.set(PREFIX + "reply.adaptive", b.toString());
+            }
+            if (reply.get("debounce") instanceof Boolean b) {
+                props.getReply().setDebounce(b);
+                store.set(PREFIX + "reply.debounce", b.toString());
+            }
+            if (reply.get("debounceMs") instanceof Number n) {
+                props.getReply().setDebounceMs(Math.max(300, Math.min(8000, n.longValue())));
+                store.set(PREFIX + "reply.debounceMs", String.valueOf(props.getReply().getDebounceMs()));
+            }
+            if (reply.get("debounceMaxMs") instanceof Number n) {
+                props.getReply().setDebounceMaxMs(Math.max(1000, Math.min(15000, n.longValue())));
+                store.set(PREFIX + "reply.debounceMaxMs", String.valueOf(props.getReply().getDebounceMaxMs()));
+            }
+            if (reply.get("gate") instanceof Boolean b) {
+                props.getReply().setGate(b);
+                store.set(PREFIX + "reply.gate", b.toString());
+            }
+            if (reply.get("gateSkip") instanceof Number n) {
+                props.getReply().setGateSkip(Math.max(0, Math.min(1.0, n.doubleValue())));
+                store.set(PREFIX + "reply.gateSkip", String.valueOf(props.getReply().getGateSkip()));
             }
         }
 

@@ -16,6 +16,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -54,10 +57,105 @@ public class MessageDispatcher {
     @org.springframework.beans.factory.annotation.Autowired
     private com.qqbot.privacy.UserDataService userData;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.qqbot.memory.CorrectionGuard corrections;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.qqbot.chat.ReplyGate replyGate;
+
     // 每个用户一个单线程队列：同一用户消息保序，不同用户互不阻塞
     private final Map<Long, ExecutorService> userWorkers = new ConcurrentHashMap<>();
     private final Map<Long, Long> workerLastUsed = new ConcurrentHashMap<>();
     private final Object workersLock = new Object();
+
+    // ---- 连发合并（防抖）----
+
+    /** 同一个人 1.8 秒内连发的多条文字，等成一批再交给模型；图片/语音立即处理。 */
+    private void enqueue(long botId, long userId, Incoming incoming) {
+        BotProperties.Reply cfg = props.getReply();
+        String key = botId + ":" + userId;
+        boolean media = !incoming.images().isEmpty() || !incoming.records().isEmpty();
+        boolean command = com.qqbot.chat.CommandText.isCommand(incoming.text());
+        // 媒体/指令不能被合并：先把同一用户 pending 的文字批按原顺序冲掉，再单独处理这一条。
+        // 不这样做，「把昵称改成X」+「在吗」合并后会因为正则锚在行尾而匹配不到，指令被静默吞掉。
+        if (!cfg.isDebounce() || media || command) {
+            if (cfg.isDebounce()) {
+                flushBatch(key);
+            }
+            submitForUser(userId, () -> BotContext.run(botId, () -> handleIncoming(botId, userId, incoming)));
+            return;
+        }
+        synchronized (debounceLock) {
+            Batch batch = batches.computeIfAbsent(key, k -> new Batch(botId, userId));
+            batch.append(incoming.text());
+            if (batch.future != null) {
+                batch.future.cancel(false);
+            }
+            long wait = Math.min(cfg.getDebounceMs(),
+                    Math.max(0, cfg.getDebounceMaxMs() - batch.ageMs()));
+            batch.future = debounceScheduler.schedule(() -> flushBatch(key), wait, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void flushBatch(String key) {
+        Batch batch;
+        synchronized (debounceLock) {
+            batch = batches.remove(key);
+        }
+        if (batch == null) {
+            return;
+        }
+        Incoming merged = new Incoming(batch.text.toString().trim(), java.util.List.of(),
+                java.util.List.of(), batch.count);
+        submitForUser(batch.userId, () -> BotContext.run(batch.botId,
+                () -> handleIncoming(batch.botId, batch.userId, merged)));
+    }
+
+    @jakarta.annotation.PreDestroy
+    public void shutdownDebounce() {
+        if (!batches.isEmpty()) {
+            log.warn("关机时丢弃 {} 个未处理的连发批次", batches.size());
+        }
+        debounceScheduler.shutdownNow();
+    }
+
+    private static final class Batch {
+        private final long botId;
+        private final long userId;
+        private final StringBuilder text = new StringBuilder();
+        private final long firstAt = System.currentTimeMillis();
+        private int count;
+        private ScheduledFuture<?> future;
+
+        private Batch(long botId, long userId) {
+            this.botId = botId;
+            this.userId = userId;
+        }
+
+        private void append(String t) {
+            if (t == null || t.isBlank()) {
+                return;
+            }
+            if (text.length() > 0) {
+                text.append('\n');
+            }
+            text.append(t.trim());
+            count++;
+        }
+
+        private long ageMs() {
+            return System.currentTimeMillis() - firstAt;
+        }
+    }
+
+    private final Map<String, Batch> batches = new ConcurrentHashMap<>();
+    private final Object debounceLock = new Object();
+    private final ScheduledExecutorService debounceScheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "msg-debounce");
+                t.setDaemon(true);
+                return t;
+            });
 
     private void submitForUser(long userId, Runnable task) {
         synchronized (workersLock) {
@@ -237,8 +335,12 @@ public class MessageDispatcher {
         }
 
         bumpCounter();
-        submitForUser(userId, () -> BotContext.run(botId, () -> {
-            try {
+        enqueue(botId, userId, incoming);
+    }
+
+    /** 真正处理一条（或一批合并后的）私聊消息 */
+    private void handleIncoming(long botId, long userId, Incoming incoming) {
+        try {
                 String userText = incoming.text();
                 boolean hasImage = !incoming.images().isEmpty();
 
@@ -299,6 +401,9 @@ public class MessageDispatcher {
                     return;
                 }
 
+                // 称呼纠正（「我不叫X」）必须在生成回复前生效，否则这一句还会叫错
+                corrections.observe(userId, userText);
+
                 // 话题屏蔽优先：命中就不走模型
                 com.qqbot.topic.TopicBlockService.Match blocked = topicBlock.checkSemantic(userText);
                 if (blocked != null) {
@@ -323,6 +428,18 @@ public class MessageDispatcher {
                 // 插件钩子：命中就短路，不发多余文字、媒体计划也不再跑（设计文档 §8.5）
                 if (plugins.tryHandle(botId, userId, userText, userKind)) {
                     return;
+                }
+                // 回复门控：只拦纯闲聊里很短/纯表情的消息，允许「已读不回」或只回很短一句。
+                // 放在话题屏蔽、插件钩子之后：安全和指令优先。
+                com.qqbot.chat.ReplyGate.Decision gate = replyGate.decide(
+                        userText, hasImage, hasVoice, incoming.count());
+                if (gate == com.qqbot.chat.ReplyGate.Decision.SKIP) {
+                    chatService.recordUserOnly(userId, userText, userKind);
+                    log.info("低信息量，已读不回 user={} text={}", userId, userText);
+                    return;
+                }
+                if (gate == com.qqbot.chat.ReplyGate.Decision.SHORT) {
+                    userText = userText + " （对方只发了很短一句，回一句极短的就行，别追问）";
                 }
                 // 先判断这条要不要带媒体，再让正文带着这个结论生成
                 com.qqbot.chat.MediaPlanner.Plan mediaPlan =
@@ -388,7 +505,6 @@ public class MessageDispatcher {
             } catch (Exception e) {
                 log.error("处理消息失败 user={}", userId, e);
             }
-        }));
     }
 
     private boolean allowed(long userId) {
@@ -451,7 +567,8 @@ public class MessageDispatcher {
         return false;
     }
 
-    private record Incoming(String text, java.util.List<String> images, java.util.List<String> records) {
+    private record Incoming(String text, java.util.List<String> images, java.util.List<String> records,
+                            int count) {
     }
 
     /** 拆出文本与图片地址；图片交给 ImageService 转成文字描述 */
@@ -488,7 +605,7 @@ public class MessageDispatcher {
         } else if (message.isTextual()) {
             sb.append(message.asText());
         }
-        return new Incoming(sb.toString().trim(), images, records);
+        return new Incoming(sb.toString().trim(), images, records, 1);
     }
 
     private void bumpCounter() {

@@ -459,11 +459,19 @@ public class AccountService {
                 "http://localhost/exec/" + execId + "/start");
     }
 
-    /** 让容器内的 shell 生成 /tmp/qr.png，再把文件取出来 */
+    /**
+     * 跑截图命令并把图片取出来。
+     *
+     * <p>命令里的 {out} 会换成一次性的文件名：固定用 /tmp/qr.png 时，只要有一次
+     * 被别的用户（比如 root 手工排查）写过，sticky /tmp 下就再也删不掉/覆盖不了，
+     * 后台会一直返回那张旧图。</p>
+     */
     private byte[] captureInContainer(String container, String cmd) {
+        String out = "/tmp/qr-" + java.util.UUID.randomUUID().toString().replace("-", "") + ".png";
+        String real = cmd.replace("{out}", out);
         try {
             String body = "{\"User\":\"snowluma\",\"Env\":[\"DISPLAY=:1\"],"
-                    + "\"Cmd\":[\"sh\",\"-lc\"," + mapper.writeValueAsString(cmd) + "],"
+                    + "\"Cmd\":[\"sh\",\"-lc\"," + mapper.writeValueAsString(real) + "],"
                     + "\"AttachStdout\":false,\"AttachStderr\":false}";
             String created = execWithStdin(body, "curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
                     "-H", "Content-Type: application/json", "--data-binary", "@-",
@@ -476,16 +484,45 @@ public class AccountService {
             exec("curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
                     "-H", "Content-Type: application/json", "-d", "{\"Detach\":true}",
                     "http://localhost/exec/" + execId + "/start");
-            Thread.sleep(2500);
-            Path tar = Files.createTempFile("qr-", ".tar");
-            exec("curl", "-s", "--unix-socket", SOCKET, "-o", tar.toString(),
-                    "http://localhost/containers/" + container + "/archive?path=/tmp/qr.png");
-            byte[] png = firstFileFromTar(Files.readAllBytes(tar));
-            Files.deleteIfExists(tar);
+            // 截图脚本要点击切页/刷新，最多等 ~8 秒文件出现
+            byte[] png = null;
+            for (int i = 0; i < 12 && png == null; i++) {
+                Thread.sleep(i == 0 ? 1500 : 600);
+                Path tar = Files.createTempFile("qr-", ".tar");
+                try {
+                    exec("curl", "-s", "--unix-socket", SOCKET, "-o", tar.toString(),
+                            "http://localhost/containers/" + container + "/archive?path=" + out);
+                    png = firstFileFromTar(Files.readAllBytes(tar));
+                } finally {
+                    Files.deleteIfExists(tar);
+                }
+            }
             return png;
         } catch (Exception e) {
             log.warn("容器截图失败 container={}: {}", container, e.getMessage());
             return null;
+        } finally {
+            removeInContainer(container, out);
+        }
+    }
+
+    /** 删掉容器里的一次性截图，避免 /tmp 越积越多 */
+    private void removeInContainer(String container, String path) {
+        try {
+            String body = "{\"User\":\"root\",\"Cmd\":[\"rm\",\"-f\","
+                    + mapper.writeValueAsString(path) + "],"
+                    + "\"AttachStdout\":false,\"AttachStderr\":false}";
+            String created = execWithStdin(body, "curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
+                    "-H", "Content-Type: application/json", "--data-binary", "@-",
+                    "http://localhost/containers/" + container + "/exec");
+            String execId = mapper.readTree(created).path("Id").asText("");
+            if (!execId.isBlank()) {
+                exec("curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
+                        "-H", "Content-Type: application/json", "-d", "{\"Detach\":true}",
+                        "http://localhost/exec/" + execId + "/start");
+            }
+        } catch (Exception ignored) {
+            // 清理失败不影响截图结果
         }
     }
 
@@ -530,7 +567,7 @@ public class AccountService {
         return "";
     }
 
-    /** 刷新登录二维码：重启该账号的 NapCat 容器，等待新二维码落盘 */
+    /** 刷新登录二维码：截图型原地换码；落盘型（NapCat）才重启容器等新图 */
     /** 当前账号的 WS 客户端（可能为 null） */
     public com.qqbot.bot.OneBotClient client(long id) {
         return registry.get(id);
@@ -552,16 +589,24 @@ public class AccountService {
             ps.executeUpdate();
         }
         registry.start(id, String.valueOf(row.get("ws_url")));
-        exec("curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
-                "http://localhost/containers/" + container + "/restart");
         ProtocolBackend backend = backendOf(id);
+        qrCache.remove(id);
         if (backend.qrcodePath(Path.of("/app/napcat-accounts", String.valueOf(id))) == null) {
-            // SnowLuma 之类不落盘二维码：重启后由用户在远程桌面扫码
-            Thread.sleep(2000);
+            // 截图型（SnowLuma）：截图脚本自己会切到扫码页、点掉 s26 弹窗、过期自动点刷新。
+            // 不要重启容器——重启会让 QQ 又去试一次失效的自动登录，反而回到 s26。
+            byte[] png = qrcode(id);
+            if (png == null) {
+                // 连登录窗都截不到，说明实例没起来/卡死，才退回重启
+                exec("curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
+                        "http://localhost/containers/" + container + "/restart");
+                Thread.sleep(2000);
+            }
             return Map.of("ok", true, "online", false,
                     "scanHint", backend.scanHint(((Number) row.get("wsPort")).intValue(),
                             ((Number) row.get("uiPort")).intValue()));
         }
+        exec("curl", "-s", "-X", "POST", "--unix-socket", SOCKET,
+                "http://localhost/containers/" + container + "/restart");
         long start = System.currentTimeMillis();
         for (int i = 0; i < 30; i++) {
             Thread.sleep(1500);

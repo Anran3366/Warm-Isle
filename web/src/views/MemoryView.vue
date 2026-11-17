@@ -34,6 +34,11 @@
           <el-button type="primary" :loading="extracting" @click="extract">
             <el-icon><MagicStick /></el-icon>抽取记忆
           </el-button>
+          <router-link to="/memory/evolve" class="evolve-link">
+            <el-button size="small" plain type="primary">
+              <el-icon><Star /></el-icon>记忆进化
+            </el-button>
+          </router-link>
         </div>
       </div>
 
@@ -510,4 +515,5 @@ onMounted(() => loadData())
   .pending-item { flex-direction: column; align-items: flex-start; gap: 8px; }
   .pending-actions { width: 100%; justify-content: flex-end; }
 }
+.evolve-link { display: inline-flex; margin-left: 8px; text-decoration: none; }
 </style>

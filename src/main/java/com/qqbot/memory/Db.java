@@ -409,7 +409,33 @@ public class Db {
             "ALTER TABLE memories ADD COLUMN recur_md TEXT",
             "ALTER TABLE memories ADD COLUMN recur_last TEXT",
             "ALTER TABLE memories ADD COLUMN recall_count INTEGER NOT NULL DEFAULT 0",
-            "UPDATE memories SET strength_at = COALESCE(last_confirmed, first_seen) WHERE strength_at IS NULL"
+            "UPDATE memories SET strength_at = COALESCE(last_confirmed, first_seen) WHERE strength_at IS NULL",
+            // ---- 记忆自进化（2026-11-17）----
+            "CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(qq_id, source)",
+            "CREATE TABLE IF NOT EXISTS memory_evidence ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT, memory_id INTEGER NOT NULL, "
+                    + "source_memory_id INTEGER, note TEXT, created_at TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_memory_evidence_mid ON memory_evidence(memory_id)",
+            "CREATE TABLE IF NOT EXISTS growth_notes ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT, qq_id INTEGER NOT NULL, content TEXT NOT NULL, "
+                    + "evidence TEXT, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL, reviewed_at TEXT)",
+            "CREATE INDEX IF NOT EXISTS idx_growth_notes_qq ON growth_notes(qq_id, status)",
+            "CREATE TABLE IF NOT EXISTS expressions ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT, qq_id INTEGER NOT NULL, situation TEXT NOT NULL, "
+                    + "text TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'chat', score REAL NOT NULL DEFAULT 0, "
+                    + "status TEXT NOT NULL DEFAULT 'pending', use_count INTEGER NOT NULL DEFAULT 0, "
+                    + "last_used TEXT, created_at TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_expressions_qq ON expressions(qq_id, status)",
+            "CREATE TABLE IF NOT EXISTS memory_checks ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT, qq_id INTEGER NOT NULL, kind TEXT NOT NULL, "
+                    + "detail TEXT, created_at TEXT NOT NULL)",
+            "CREATE INDEX IF NOT EXISTS idx_memory_checks_qq ON memory_checks(qq_id, created_at)",
+            "ALTER TABLE friend_profile ADD COLUMN address TEXT",
+            "ALTER TABLE friend_profile ADD COLUMN stage TEXT",
+            "ALTER TABLE friend_profile ADD COLUMN traits TEXT",
+            "ALTER TABLE friend_profile ADD COLUMN taboos TEXT",
+            "ALTER TABLE friend_profile ADD COLUMN important_dates TEXT",
+            "ALTER TABLE friend_profile ADD COLUMN profile_updated_at TEXT"
     };
 
     private final Path path;

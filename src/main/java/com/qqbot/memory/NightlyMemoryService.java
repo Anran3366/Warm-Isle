@@ -159,9 +159,10 @@ public class NightlyMemoryService {
             return out;
         }
 
+        String transcriptText = transcript(rows);
         List<Map<String, String>> prompt = List.of(
                 Map.of("role", "system", "content", systemPrompt(eventDay)),
-                Map.of("role", "user", "content", transcript(rows)));
+                Map.of("role", "user", "content", transcriptText));
 
         LlmResult result;
         try {
@@ -213,6 +214,12 @@ public class NightlyMemoryService {
                 String subject = item.path("subject").asText("user").trim();
                 if (subject.isEmpty()) {
                     subject = "user";
+                }
+                // 称呼类记忆同样要求原话里明确自报，挡住「我超威」被脑补成昵称
+                if ("user".equals(subject) && CorrectionGuard.isNameKey(key)
+                        && !CorrectionGuard.explicitlyIntroduced(transcriptText, value)) {
+                    log.info("跳过未明确自报的称呼 qqId={} key={} value={}", qqId, key, value);
+                    continue;
                 }
                 String storedKey = "event".equals(type) ? key + "@" + eventDay : key;
                 String expiresAt = item.path("expiresAt").asText("").trim();
@@ -311,6 +318,8 @@ public class NightlyMemoryService {
                 3. 同一件事只输出一条；同 key 取最新说法。
                 4. 没有值得记的就输出 "memories":[]，episode 仍要写。
                 5. confidence：明确陈述 0.9，上下文推断 0.6，含糊 0.4。
+                6. 用户纠正此前的称呼/说法时（例如「我不叫X」），用同一个 key 写最新值
+                   （称呼类用 key=称呼），不要把被否认的旧称呼再当昵称；程序会自动归档旧值。
                 """.formatted(eventDay);
     }
 

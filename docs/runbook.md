@@ -272,3 +272,18 @@ cd /srv/qqbot/deploy/linux && sudo docker compose up -d napcat
   重启 caddy 后两站全部 404，最后从会话记录里才找回配置。
 - Caddyfile 是**单文件 bind mount**：服务器 `git pull` 后必须 `sudo docker restart caddy`
   才会读到新内容；改 compose 卷配置则需要 `sudo docker compose up -d --no-deps caddy` 重建。
+
+
+## 15. 记忆自进化（2026-11-17）
+
+| 项 | 值 |
+| --- | --- |
+| 反思 | 每天 00:20（`MemoryReflector`），每账号最多 20 人，内存 <500MB 跳过 |
+| 表达挖掘 | 每周日 02:10（`ExpressionMiner`） |
+| 巩固 | 反思后自动跑；也可 `POST /api/memory/evolve/consolidate?qqId=` |
+| 体检 | 手动 `GET /api/memory/evolve/audit?qqId=` |
+| 开关 | `POST /api/memory/evolve/toggle?enabled=false`，或 `settings` 表 `memory.evolve.enabled=false` |
+| 新表 | `memory_evidence`、`growth_notes`、`expressions`、`memory_checks`、`friend_profile` 新列 |
+| 迁移 | 启动时由 `Db.MIGRATIONS` 自动执行；只加不删，失败下次重试 |
+| 缓存 | `/`、`/index.html`、`/sw.js` 由 `CacheControlFilter` 设 no-cache；`/assets/**` 长缓存 |
+| 回滚 | 换回上一版 jar；表保留不影响旧代码；必要时关掉开关 |

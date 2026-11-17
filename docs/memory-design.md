@@ -1,7 +1,7 @@
-# 记忆系统设计（v2）
+# 记忆系统设计（v2 → v3）
 
 > 目标：把「记忆」和「知识库」合并成一个以“能用来关心对方”为标准的记忆库。
-> 状态：P1–P3 已实现并上线（2026-10-28，提交 `928971f` / `f772464` / `c0f8d5a`）；P4 知识库「设定」用途、P5 向量检索未做。
+> 状态：v2 P1–P3 已上线（2026-10-28，提交 `928971f` / `f772464` / `c0f8d5a`）；v3 自进化于 2026-11-17 上线（提交 `0d28882` / `da77dcb`）。P4 知识库「设定」用途未做。
 
 ---
 
@@ -330,3 +330,75 @@ system:
 - 迁移 23 个用户、58 条记忆；夜间整理试跑 14 个用户，写入 27 条、丢弃 4 条、生成 14 个 episode。
 - 可行动性最高 0.68，原定 0.7 阈值下当天没有 follow_up；2026-10-28 按所有者「宁可多问一句」下调到 **0.65**，同类事件现在会排到次日关心。
 - 线上免打扰为 `push.quiet = 00:30–07:00`（2026-10-28 所有者已改，不是全天静默）；落在该时段的主动回忆/生日祝福会顺延到 07:00 之后的首个 tick。
+
+
+---
+
+## 9. v3：自进化（2026-11-17 上线）
+
+v2 解决「记得住、会遗忘、能召回」；v3 解决「会整理、会反思、会长」。
+
+### 9.1 四层记忆
+
+| 层 | 内容 | 实现 | 注入 |
+| --- | --- | --- | --- |
+| L0 常驻画像 | 称呼、关系阶段、2 条特征、近况、心情、禁忌 | `ProfileSnapshotService` | ≤160 字，缓存 12h |
+| L1 情节 | 每日 episode | `episodes` / `NightlyMemoryService` | 按需 |
+| L2 语义 | facts + memories + insight/lesson | `memories`（source=`reflection:*`） | 相关 top-k，≤600 字 |
+| L3 程序 | 表达方式 | `expressions` | 1–2 条 / ≤100 字 |
+
+### 9.2 三个循环
+
+- **每条消息**：`RecallPlanner.planBlock()` 在 `MemoryRecall` 外补常驻画像、纪念日、到期跟进、忽然想起、表达方式；附加段总预算 300 字，超出按顺序砍。
+- **每天 00:20**：`MemoryReflector.nightly()` 遍历账号/用户（每账号最多 20 人，内存 <500MB 跳过）：
+  - 输入：近 24h 对话（≤2500 字）、近 3 天 episode、活跃记忆（≤30 条带 id）、昨天复盘问题、否认称呼；
+  - 输出 JSON：`insights` / `lessons` / `growth` / `profile` / `conflicts`；
+  - 校验：evidence 必须命中该用户已有记忆 id；否认词过滤；长度上限（洞察 4 / 经验 3 / 成长 2）；
+  - 写库：insight → `memories(type=profile, key=洞察·…, source=reflection:insight)`；lesson → `type=relation, key=经验·…`；growth → `growth_notes(pending)`；conflict → 旧记忆 archived；evidence → `memory_evidence`；
+  - 收尾：`ProfileSnapshotService.rebuild()` + `PersonProfileService.applyReflection/backfill` + `MemoryConsolidator.run()`。
+- **每周日 02:10**：`ExpressionMiner.weekly()` 从「assistant 说完、user 3 分钟内接住且无否定」的句子里抽 `(situation, text)`，写 `expressions(pending)`。
+
+### 9.3 数据表（均通过 `Db.MIGRATIONS` 追加，只在 bot 库）
+
+```sql
+memory_evidence(id, memory_id, source_memory_id, note, created_at)
+growth_notes(id, qq_id, content, evidence, status, created_at, reviewed_at)
+expressions(id, qq_id, situation, text, source, score, status, use_count, last_used, created_at)
+memory_checks(id, qq_id, kind, detail, created_at)
+ALTER TABLE friend_profile ADD address/stage/traits/taboos/important_dates/profile_updated_at
+```
+
+### 9.4 成长与表达：人工采纳
+
+- 成长 `pending → approved/rejected`；只有 approved 进 prompt（≤3 条 / 120 字），人格卡本身不改；
+- 表达 `pending → approved/rejected`；只有 approved 被检索，最多 2 条 / 100 字；
+- 后台「记忆进化」页可审、可改；人物档案也可手改。
+
+### 9.5 记忆体检
+
+`MemoryAuditService.audit(qqId)` 输出矛盾（同 subject+key 多值）、快忘（importance≥0.7 且强度 0.15–0.35）、过时（event >30 天）、重复（归一化 value 相同）、待审成长/表达；报告写入 `memory_checks`，只读不自动修。
+
+### 9.6 接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/memory/evolve/status` | 开关状态 |
+| POST | `/api/memory/evolve/toggle?enabled=` | 开关 |
+| GET | `/api/memory/evolve/snapshot?qqId=` | L0 画像 |
+| POST | `/api/memory/evolve/snapshot/rebuild?qqId=` | 重建 L0 |
+| GET | `/api/memory/evolve/recall?qqId=&text=` | 召回预览 |
+| POST | `/api/memory/evolve/reflect?qqId=&force=` | 手动反思 |
+| POST | `/api/memory/evolve/consolidate?qqId=` | 手动巩固 |
+| GET/POST | `/api/memory/evolve/profile?qqId=` | 人物档案读写 |
+| POST | `/api/memory/evolve/profile/backfill?qqId=` | 确定性回填 |
+| GET | `/api/memory/evolve/timeline?qqId=&limit=` | 观测台 |
+| GET | `/api/memory/evolve/audit?qqId=` | 体检 |
+| GET/POST | `/api/memory/evolve/growth…` | 成长列表/采纳/拒绝 |
+| GET/POST | `/api/memory/evolve/expressions…` | 表达列表/采纳/拒绝/挖掘 |
+| GET | `/api/memories/graph` | 星图（含 evidenceCount/conflictCount/证据边/矛盾边） |
+
+### 9.7 预算与回滚
+
+- 增量：L0 160 + 附加 300 + 成长 120，最坏约 580 字；主记忆块仍 1200 字上限。
+- 开关 `memory.evolve.enabled`，关掉后 `PromptBuilder` 退回原 `MemoryRecall`，成长/表达不注入。
+- 迁移只加表/列；回滚换回上一版 jar 即可，数据表保留不影响旧代码。

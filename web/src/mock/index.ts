@@ -185,7 +185,7 @@ let settings: Settings = {
   contextRounds: 20,
   maxTokens: 400,
   vision: { enabled: true, maxPerMessage: 3, maxSize: 1024, dailyLimit: 30, emojiAutoImport: true },
-  reply: { maxChars: 60, splitDelayMs: 1200, typingMs: 600, adaptive: true }
+  reply: { maxChars: 60, splitDelayMs: 1200, typingMs: 600, adaptive: true, debounce: true, debounceMs: 1800, debounceMaxMs: 4000, gate: true, gateSkip: 0.45 }
 }
 
 let topicBlock: TopicBlockConfig = defaultTopicBlock()

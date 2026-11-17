@@ -36,4 +36,12 @@ class PromptRulesTest {
         // 2026-10-28 合并后 1206 字符；超过 1600 说明又在往上堆规则
         assertTrue(rules.length() < 1600, "rules 长度 " + rules.length());
     }
+
+    @Test
+    void doesNotTellItToSelfDeprecate() {
+        // 旧规则里写死了「先认一句（行吧，是我嘴欠）」，模型会照抄，和人格卡的「不卑微」打架
+        assertFalse(rules.contains("嘴欠"), "规则里不应再出现嘴欠这种自贬示范");
+        assertTrue(rules.contains("别自贬"));
+        assertTrue(rules.contains("不反问"));
+    }
 }

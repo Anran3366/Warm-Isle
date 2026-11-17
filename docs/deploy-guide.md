@@ -333,3 +333,11 @@ npm run dev
 | 8081 | imageguard（仅本机） |
 | 8080(searxng) | 元搜索（仅容器网络） |
 
+## 附二、记忆自进化（2026-11-17）
+
+- 启动时自动执行 `Db.MIGRATIONS`，新增 `memory_evidence` / `growth_notes` / `expressions` / `memory_checks` 与 `friend_profile` 五列；只加不删。
+- 定时：反思 00:20、表达挖掘周日 02:10；确认容器时区为 `Asia/Shanghai`（compose 已设）。
+- 后台入口：`/memory/evolve`；如果菜单看不到，先强刷（入口文件已 no-cache，`/assets/**` 长缓存）。
+- 想临时关掉：`POST /api/memory/evolve/toggle?enabled=false`。
+- 升级前备份 `data/qqbot/bots/1.db`；回滚换上一版 jar 即可。
+

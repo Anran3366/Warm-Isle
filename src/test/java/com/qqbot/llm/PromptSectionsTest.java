@@ -80,4 +80,11 @@ class PromptSectionsTest {
         String dynamic = PromptSections.rulesFor(RULES, ctx("在吗"));
         assertTrue(dynamic.length() < full.length());
     }
+
+    @Test
+    void keepsUserDefinedSections() {
+        String persona = "你是小满。\n【复盘补充】\n少说教，用平等分享代替指导。";
+        String out = PromptSections.personaFor(persona, ctx("在吗"));
+        assertTrue(out.contains("复盘补充"), "用户自己加的小节不能被动态筛选丢掉: " + out);
+    }
 }

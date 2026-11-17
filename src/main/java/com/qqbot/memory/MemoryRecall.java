@@ -158,6 +158,14 @@ public class MemoryRecall {
 
     /** 拼成 prompt 里的三块；没有可用记忆时返回空串 */
     public String promptBlock(long qqId, String userText) {
+        return promptBlock(qqId, userText, List.of());
+    }
+
+    /**
+     * 拼成 prompt 里的三块，并追加「常驻印象 / 跟进 / 忽然想起 / 表达方式」等附加段。
+     * 附加段放在「以上只是背景」之前，避免被那句“别主动提”压住。
+     */
+    public String promptBlock(long qqId, String userText, List<String> extras) {
         List<Scored> picked;
         try {
             picked = recall(qqId, userText, MAX_ITEMS);
@@ -165,7 +173,8 @@ public class MemoryRecall {
             log.warn("记忆检索失败 qqId={}: {}", qqId, e.getMessage());
             return "";
         }
-        if (picked.isEmpty()) {
+        boolean hasExtras = extras != null && extras.stream().anyMatch(e -> e != null && !e.isBlank());
+        if (picked.isEmpty() && !hasExtras) {
             return "";
         }
         Map<String, List<String>> groups = new LinkedHashMap<>();
@@ -192,10 +201,22 @@ public class MemoryRecall {
                 sb.append("- ").append(line).append('\n');
             }
         });
+        if (extras != null) {
+            for (String extra : extras) {
+                if (extra == null || extra.isBlank()) {
+                    continue;
+                }
+                if (sb.length() > 0) {
+                    sb.append('\n');
+                }
+                sb.append(extra.trim()).append('\n');
+            }
+        }
         if (sb.length() == 0) {
             return "";
         }
-        sb.append("以上只是背景：对方不提起，就别主动拿出来聊，尤其别翻旧矛盾；对方问起再自然接。");
+        sb.append("以上只是背景：对方不提起，就别主动拿出来聊，尤其别翻旧矛盾；对方问起再自然接。"
+                + "标了「可以自然带一句」的除外。");
         return sb.toString();
     }
 

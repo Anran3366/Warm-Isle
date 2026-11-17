@@ -1,8 +1,10 @@
 package com.qqbot.account;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 
 import org.springframework.stereotype.Component;
 
@@ -105,32 +107,24 @@ public class SnowLumaBackend implements ProtocolBackend {
 
     @Override
     public String scanHint(int wsPort, int uiPort) {
-        return "下面是容器桌面的截图，直接扫图里的二维码；显示「已过期」就点「刷新二维码」重新截。"
-                + " 截不到时用远程桌面：127.0.0.1:" + (uiPort + 100)
+        return "下面是容器里 QQ 登录窗的二维码（已裁好放大）。码约 2 分钟过期，"
+                + "点「刷新二维码」会自动换一张，不用重启实例。"
+                + " 实在扫不到时再用远程桌面：127.0.0.1:" + (uiPort + 100)
                 + "，密码 " + vncPassword(wsPort) + "。";
     }
 
     /**
-     * 用 xwininfo 找 QQ 登录窗的绝对坐标，再按该区域截屏。
-     * 找不到窗口时退回整屏（1920x1080），保证至少有图。
+     * 容器里跑 qr_helper.py：它会把窗口从「自动登录」切到扫码页、点掉 s26 弹窗、
+     * 过期自动点「刷新」，最后把二维码区域裁出来放大到 320x320。
+     *
+     * <p>脚本以 base64 内嵌在命令里写到容器 /tmp，避免依赖容器里的仓库文件。
+     * {out} 由 {@code AccountService.captureInContainer} 换成一次性文件路径。</p>
      */
     @Override
     public String qrcodeCaptureCmd() {
-        // 取面积最大的 QQ 窗口（登录窗 720x640，另有 1x1/小工具窗，不能只看第一条），
-        // 找不到就失败返回，由前端提示「正在启动」，避免把整个桌面糊上去
-        return "rm -f /tmp/qr.png; "
-                + "L=$(xwininfo -root -tree 2>/dev/null | grep '\"QQ\"' | awk '"
-                + "{ area=0; for(i=1;i<=NF;i++){ if ($i ~ /^[0-9]+x[0-9]+\\+/) { "
-                + "split($i,a,\"+\"); split(a[1],d,\"x\"); area=d[1]*d[2] } } "
-                + "if (area>max) { max=area; line=$0 } } "
-                + "END { if (max>=40000) print line }'); "
-                + "[ -z \"$L\" ] && exit 3; "
-                + "SZ=$(echo \"$L\" | grep -oE '[0-9]+x[0-9]+\\+' | head -1 | tr -d '+'); "
-                + "W=${SZ%x*}; H=${SZ#*x}; "
-                + "POS=$(echo \"$L\" | grep -oE '\\+[0-9]+\\+[0-9]+$' | tail -1); "
-                + "X=$(echo \"$POS\" | cut -d+ -f2); Y=$(echo \"$POS\" | cut -d+ -f3); "
-                + "ffmpeg -loglevel error -f x11grab -draw_mouse 0 -video_size ${W}x${H} "
-                + "-i :1+${X},${Y} -frames:v 1 -y /tmp/qr.png";
+        return "mkdir -p /tmp/.slqr && printf %s '" + QR_HELPER_B64 + "'"
+                + " | base64 -d > /tmp/.slqr/qr_helper.py"
+                + " && python3 /tmp/.slqr/qr_helper.py {out}";
     }
 
     /**
@@ -146,6 +140,20 @@ public class SnowLumaBackend implements ProtocolBackend {
                 + "[json.dump({**d,'networks':{**d['networks'],**{k:[{**n,'accessToken':''} for n in d['networks'].get(k,[])] "
                 + "for k in ('wsServers','httpServers')}}},open(p,'w'),indent=2,ensure_ascii=False) "
                 + "for p in ps for d in [json.load(open(p))]]\"";
+    }
+
+    /** 内嵌的二维码辅助脚本（见 resources/snowluma/qr_helper.py） */
+    private static final String QR_HELPER_B64 = loadHelper();
+
+    private static String loadHelper() {
+        try (InputStream in = SnowLumaBackend.class.getResourceAsStream("/snowluma/qr_helper.py")) {
+            if (in == null) {
+                throw new IllegalStateException("缺少 /snowluma/qr_helper.py");
+            }
+            return Base64.getEncoder().encodeToString(in.readAllBytes());
+        } catch (IOException e) {
+            throw new IllegalStateException("读取 qr_helper.py 失败", e);
+        }
     }
 
     private String vncPassword(int wsPort) {

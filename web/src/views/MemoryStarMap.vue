@@ -19,6 +19,8 @@
         <span class="stat">用户 <b>{{ meta.users ?? 0 }}</b></span>
         <span class="stat fading">快忘了 <b>{{ meta.fading ?? 0 }}</b></span>
         <span class="stat pinned">钉住 <b>{{ meta.pinned ?? 0 }}</b></span>
+        <span class="stat evidence">证据 <b>{{ meta.evidence ?? 0 }}</b></span>
+        <span class="stat conflict">矛盾 <b>{{ meta.conflicts ?? 0 }}</b></span>
         <el-button size="small" @click="resetView">重置视角</el-button>
         <el-button size="small" :type="autoRotate ? 'primary' : 'default'" @click="autoRotate = !autoRotate">
           {{ autoRotate ? '暂停自转' : '继续自转' }}
@@ -75,6 +77,8 @@
             <dt>被想起</dt><dd>{{ selected.recallCount }} 次</dd>
             <dt>最近确认</dt><dd>{{ selected.lastConfirmed || '—' }}</dd>
             <dt v-if="selected.recurMd">每年</dt><dd v-if="selected.recurMd">{{ selected.recurMd }}</dd>
+            <dt>证据</dt><dd>{{ selected.evidenceCount || 0 }} 条{{ selected.evidenceIds?.length ? '（#' + selected.evidenceIds.join('、#') + '）' : '' }}</dd>
+            <dt v-if="selected.conflictCount">矛盾</dt><dd v-if="selected.conflictCount" class="conflict-text">{{ selected.conflictCount }} 条冲突</dd>
           </dl>
           <el-button
             size="small"
@@ -109,6 +113,9 @@ interface GraphNode {
   recallCount: number
   lastConfirmed?: string | null
   recurMd?: string | null
+  evidenceCount?: number
+  conflictCount?: number
+  evidenceIds?: string[]
 }
 interface GraphEdge { a: string; b: string; w: number; kind: string }
 interface GraphLayer { type: string; label: string; color: string; ring?: number }
@@ -116,7 +123,7 @@ interface GraphResp {
   nodes: GraphNode[]
   edges: GraphEdge[]
   layers: GraphLayer[]
-  meta: { total: number; fading: number; pinned: number; users?: number }
+  meta: { total: number; fading: number; pinned: number; users?: number; evidence?: number; conflicts?: number }
 }
 interface UserOption { qqId: string; name: string; total: number; active: number }
 
@@ -151,12 +158,13 @@ const layers = ref<GraphLayer[]>([
   { type: 'event', label: '最近发生', color: '#9dffc9' },
   { type: 'world', label: '设定', color: '#c9a7ff' }
 ])
-const meta = ref<{ total: number; fading: number; pinned: number; users?: number }>({ total: 0, fading: 0, pinned: 0 })
+const meta = ref<{ total: number; fading: number; pinned: number; users?: number; evidence?: number; conflicts?: number }>(
+  { total: 0, fading: 0, pinned: 0 })
 
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
 /** 邻接表：悬停时用它点亮整条链路 */
-const adjacency = new Map<string, { id: string; w: number }[]>()
+const adjacency = new Map<string, { id: string; w: number; kind: string }[]>()
 
 const stars = new Map<string, Star>()
 const screenPos = new Map<string, { x: number; y: number; r: number; z: number }>()
@@ -258,8 +266,8 @@ function rebuildAdjacency() {
   for (const e of edges.value) {
     if (!adjacency.has(e.a)) adjacency.set(e.a, [])
     if (!adjacency.has(e.b)) adjacency.set(e.b, [])
-    adjacency.get(e.a)!.push({ id: e.b, w: e.w })
-    adjacency.get(e.b)!.push({ id: e.a, w: e.w })
+    adjacency.get(e.a)!.push({ id: e.b, w: e.w, kind: e.kind })
+    adjacency.get(e.b)!.push({ id: e.a, w: e.w, kind: e.kind })
   }
 }
 
@@ -437,15 +445,20 @@ function draw() {
         const q = rot(target.x, target.y, target.z)
         const P = project(q, cx, cy)
         const grad = ctx.createLinearGradient(C.x, C.y, P.x, P.y)
-        const color = soften(colorOf(target.type), 0.3)
-        grad.addColorStop(0, hexA(color, 0.85))
-        grad.addColorStop(1, hexA(color, 0.25))
+        const kind = nb.kind
+        const color = kind === 'conflict' ? '#ff5c6c'
+          : kind === 'evidence' ? '#ffd166'
+          : soften(colorOf(target.type), 0.3)
+        grad.addColorStop(0, hexA(color, kind === 'vector' ? 0.7 : 0.95))
+        grad.addColorStop(1, hexA(color, 0.2))
         ctx.strokeStyle = grad
-        ctx.lineWidth = 0.9
+        ctx.lineWidth = kind === 'conflict' ? 1.4 : 0.9
+        ctx.setLineDash(kind === 'conflict' ? [5, 4] : kind === 'evidence' ? [2, 3] : [])
         ctx.beginPath()
         ctx.moveTo(C.x, C.y)
         ctx.lineTo(P.x, P.y)
         ctx.stroke()
+        ctx.setLineDash([])
       }
     }
   }
@@ -521,6 +534,15 @@ function draw() {
       ctx.beginPath()
       ctx.arc(c.x, c.y, r + 3 + Math.sin(t * 3) * 1.2, 0, Math.PI * 2)
       ctx.stroke()
+    }
+    if (star.conflictCount) {
+      ctx.strokeStyle = `rgba(255, 92, 108, ${0.85 * dim})`
+      ctx.lineWidth = 1.2
+      ctx.setLineDash([3, 3])
+      ctx.beginPath()
+      ctx.arc(c.x, c.y, r + 5.5, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.setLineDash([])
     }
     if (selected.value?.id === star.id) {
       ctx.strokeStyle = 'rgba(255,255,255,0.9)'
@@ -734,6 +756,8 @@ onBeforeUnmount(() => {
 .stat b { color: #e6edf7; }
 .stat.fading b { color: #f0b45a; }
 .stat.pinned b { color: #ffd166; }
+.stat.evidence b { color: #ffd166; }
+.stat.conflict b { color: #ff5c6c; }
 .stage { position: relative; flex: 1; overflow: hidden; padding: 0; background: #020308; min-height: 460px; }
 .stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
 .stage canvas:active { cursor: grabbing; }
@@ -760,4 +784,5 @@ onBeforeUnmount(() => {
 .detail dd { margin: 0; color: #b9c8db; }
 .slide-enter-active, .slide-leave-active { transition: all 0.18s ease; }
 .slide-enter-from, .slide-leave-to { opacity: 0; transform: translateX(12px); }
+.conflict-text { color: #ff8a95; }
 </style>

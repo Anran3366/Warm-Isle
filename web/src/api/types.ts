@@ -173,6 +173,16 @@ export interface ReplyConfig {
   typingMs: number
   /** 按对方消息长短自适应 */
   adaptive: boolean
+  /** 连发合并：同一用户短时间多条文字等成一批 */
+  debounce: boolean
+  /** 合并等待（毫秒） */
+  debounceMs: number
+  /** 合并最长等待（毫秒） */
+  debounceMaxMs: number
+  /** 低信息量消息的回复门控 */
+  gate: boolean
+  /** 门控里已读不回的概率 0~1 */
+  gateSkip: number
 }
 
 export interface Settings {

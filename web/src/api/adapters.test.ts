@@ -79,7 +79,10 @@ describe('normalizeSettings', () => {
       contextRounds: 12,
       maxTokens: 600,
       vision: { enabled: false, maxPerMessage: 2, maxSize: 768, dailyLimit: 10, emojiAutoImport: false },
-      reply: { maxChars: 60, splitDelayMs: 1200, typingMs: 600, adaptive: true }
+      reply: {
+        maxChars: 60, splitDelayMs: 1200, typingMs: 600, adaptive: true,
+        debounce: true, debounceMs: 1800, debounceMaxMs: 4000, gate: true, gateSkip: 0.45
+      }
     })
   })
 

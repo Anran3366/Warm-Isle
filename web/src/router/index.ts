@@ -17,6 +17,7 @@ const router = createRouter({
         { path: 'persona', name: 'persona', component: () => import('@/views/PersonaView.vue'), meta: { title: '人设' } },
         { path: 'memory', name: 'memory', component: () => import('@/views/MemoryView.vue'), meta: { title: '记忆' } },
         { path: 'memory/star', name: 'memory-star', component: () => import('@/views/MemoryStarMap.vue'), meta: { title: '记忆星图' } },
+        { path: 'memory/evolve', name: 'memory-evolve', component: () => import('@/views/MemoryEvolveView.vue'), meta: { title: '记忆进化' } },
         { path: 'account', name: 'account', component: () => import('@/views/AccountView.vue'), meta: { title: '机器人账号' } },
         { path: 'knowledge', name: 'knowledge', component: () => import('@/views/KnowledgeView.vue'), meta: { title: '知识库' } },
         { path: 'emoji', name: 'emoji', component: () => import('@/views/EmojiView.vue'), meta: { title: '表情包' } },

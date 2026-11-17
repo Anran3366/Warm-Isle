@@ -222,6 +222,18 @@ public class MemoryStore {
         update("DELETE FROM memories WHERE id=?", id);
     }
 
+    /**
+     * 用户明确否认某个称呼：把「昵称/称呼/名字」类、值相同的 active 记忆归档。
+     * 只动称呼类，避免同名事件（比如也叫「超威」的宠物）被误删。
+     */
+    public int archiveByValue(long qqId, String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        return update("UPDATE memories SET status='archived' WHERE qq_id=? AND status='active' "
+                + "AND value=? AND key IN ('昵称','称呼','名字')", qqId, value.trim());
+    }
+
     /** 用户说「别问了」→ 该用户所有待主动回忆跳过 */
     public int skipAllPending(long qqId) {
         return update("UPDATE memories SET follow_up_state='skipped' "
@@ -531,6 +543,43 @@ public class MemoryStore {
     public List<Memory> dueFollowUps(long qqId, LocalDateTime nowT) {
         return query("qq_id=? AND status='active' AND follow_up_state='pending' "
                 + "AND follow_up_at IS NOT NULL AND follow_up_at<>'' AND follow_up_at <= ?", qqId, ts(nowT));
+    }
+
+    /** 自进化：把一条记忆标成归档/停用 */
+    public int setStatus(long id, String status) {
+        return update("UPDATE memories SET status=? WHERE id=?", status, id);
+    }
+
+    /** 反思用：某时间之后确认过的 active 记忆（默认最近 24h） */
+    public List<Memory> confirmedSince(long qqId, String since) {
+        return query("qq_id=? AND status='active' AND last_confirmed>=?", qqId, since);
+    }
+
+    /** 证据校验：这批 id 里哪些确实属于该用户 */
+    public java.util.Set<Long> ownedIds(long qqId, java.util.Collection<Long> ids) {
+        java.util.Set<Long> out = new java.util.HashSet<>();
+        if (ids == null || ids.isEmpty()) {
+            return out;
+        }
+        String marks = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        java.util.List<Object> args = new java.util.ArrayList<>();
+        args.add(qqId);
+        args.addAll(ids);
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT id FROM memories WHERE qq_id=? AND id IN (" + marks + ")")) {
+            for (int i = 0; i < args.size(); i++) {
+                ps.setObject(i + 1, args.get(i));
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(rs.getLong(1));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("校验记忆归属失败: {}", e.getMessage());
+        }
+        return out;
     }
 
     public Memory byId(long id) {

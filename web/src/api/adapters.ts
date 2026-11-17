@@ -89,7 +89,12 @@ export const DEFAULT_SETTINGS: Settings = {
     maxChars: 60,
     splitDelayMs: 1200,
     typingMs: 600,
-    adaptive: true
+    adaptive: true,
+    debounce: true,
+    debounceMs: 1800,
+    debounceMaxMs: 4000,
+    gate: true,
+    gateSkip: 0.45
   }
 }
 
@@ -127,7 +132,12 @@ export function normalizeSettings(raw: unknown): Settings {
       maxChars: num(reply.maxChars, DEFAULT_SETTINGS.reply.maxChars),
       splitDelayMs: num(reply.splitDelayMs, DEFAULT_SETTINGS.reply.splitDelayMs),
       typingMs: num(reply.typingMs, DEFAULT_SETTINGS.reply.typingMs),
-      adaptive: bool(reply.adaptive, DEFAULT_SETTINGS.reply.adaptive)
+      adaptive: bool(reply.adaptive, DEFAULT_SETTINGS.reply.adaptive),
+      debounce: bool(reply.debounce, DEFAULT_SETTINGS.reply.debounce),
+      debounceMs: num(reply.debounceMs, DEFAULT_SETTINGS.reply.debounceMs),
+      debounceMaxMs: num(reply.debounceMaxMs, DEFAULT_SETTINGS.reply.debounceMaxMs),
+      gate: bool(reply.gate, DEFAULT_SETTINGS.reply.gate),
+      gateSkip: num(reply.gateSkip, DEFAULT_SETTINGS.reply.gateSkip)
     }
   }
 }

@@ -54,6 +54,14 @@ public class PromptBuilder {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.qqbot.plugin.registry.CapabilityPrompt capabilityPrompt;
 
+    /** 记忆自进化：四路召回 + 常驻印象；未装配时退回原 MemoryRecall */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.qqbot.memory.evolve.RecallPlanner recallPlanner;
+
+    /** 已采纳的成长档案（≤3 条 / 120 字） */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.qqbot.memory.evolve.GrowthService growthService;
+
     public PromptBuilder(BotProperties props, FactStore facts, PersonaStore personas,
                          com.qqbot.chat.FamiliarityService familiarity,
                          com.qqbot.chat.LifeEventService lifeEvents,
@@ -89,9 +97,18 @@ public class PromptBuilder {
     public List<Map<String, String>> build(long userId, List<ChatMessage> history, String userText,
                                            long gapMinutes, com.qqbot.chat.MediaPlanner.Plan mediaPlan) {
         boolean dynamic = props.getPrompt().isDynamic();
-        String personaText = personaText();
-        // 记忆 v2：按这句话检索，而不是把全部事实塞进去
-        String memoryBlock = memoryBlock(userId, userText);
+        PersonaExamples personaExamples = parsePersonaExamples(personaText());
+        String personaText = personaExamples.persona();
+        // 记忆 v2：按这句话检索，而不是把全部事实塞进去；自进化开启时再补常驻印象/跟进/表达
+        String memoryBlock = recallPlanner == null
+                ? memoryBlock(userId, userText)
+                : recallPlanner.planBlock(userId, userText);
+        String growthBlock = "";
+        try {
+            growthBlock = growthService == null ? "" : growthService.approvedBlock(userId);
+        } catch (Exception ignored) {
+            // 成长档案失败不影响回复
+        }
         // 动态模式下不再用事实卡兜底：没命中就不注入画像
         String factsBlock = (!dynamic && memoryBlock.isEmpty()) ? profileBlock(userId) : "";
         String styleBlock = styleBlock();
@@ -137,6 +154,7 @@ public class PromptBuilder {
         String system = personaText
                 + (styleBlock.isEmpty() ? "" : "\n\n" + styleBlock)
                 + "\n\n" + rulesText
+                + (growthBlock.isEmpty() ? "" : "\n\n" + growthBlock)
                 + (moodLine.isEmpty() ? "" : "\n" + moodLine)
                 + (familiarityLine.isEmpty() ? "" : "\n" + familiarityLine)
                 + (lifeLine.isEmpty() ? "" : "\n" + lifeLine)
@@ -151,6 +169,11 @@ public class PromptBuilder {
 
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", system));
+        // 人设里的【示例对话】按 few-shot 注入：比堆规则更能定语气
+        for (Example example : personaExamples.examples()) {
+            messages.add(Map.of("role", "user", "content", example.user()));
+            messages.add(Map.of("role", "assistant", "content", example.assistant()));
+        }
 
         int maxHistory = Math.max(0, props.getLlm().getHistoryRounds() * 2);
         int from = Math.max(0, history.size() - maxHistory);
@@ -226,43 +249,92 @@ public class PromptBuilder {
 
     private static final String SPEAKING_RULES = """
             说话方式（重要）：
-            - 像发微信：短句为主，1-4 句（最多 5 句），超过 60 字就停一下等对方回。
-            - 每句说完，不留半句；别用「就是…」「那个…」这种没下文的开头。
-            - 不用书面语、不用列表，不说「首先其次」「建议」「作为 AI」。
-            - 少用句号，多用逗号、省略号、语气词（嗯、啊、呀、嘛、吧）。
-            - 对方说得少你更少，说得多可以多聊两句；一句话能接住就别追问。
-            - 不复述、不总结对方刚说的话，也不把上一句换个说法再说一遍。
+            - 像发微信：短句为主，1-3 句，超过 60 字就停一下等对方回。
+            - 口语化，用「呀、啦、嘛、诶、唔」；不用书面语、列表、「首先其次」「建议」。
+            - 对方说得少你更少；一句能接住就别追问。
+            - 不复述对方的话，也不把上一句换个说法再说一遍。
+            - 称呼以对方明确说过、且没被否认的为准；不确定直接用「你」，别猜也别编。
+            - 被纠正、被考记性：认一次就够，不翻旧账、不反问；想问就直接问「那你希望我怎么叫」；问「我是谁」记得就答，不记得就直说「我记混了，你再说一次」。
 
             接住情绪（重要）：
-            - 对方不高兴、质疑你、说你冷淡时，先接住情绪再说话；不要用「不是啦」「我哪有」「明明是你」「谁……了」开头。
-            - 被说阴阳、敷衍、学我，先认一句（「行吧，是我嘴欠」），再往下聊，最多解释一句。
-            - 可以有小情绪、可以撒娇哼一声，但最后要落回哄对方，不要赢过对方。
+            - 对方不高兴、质疑你、说你冷淡时，先接住情绪再说话；不要用「不是啦」「我哪有」「明明是你」开头。
+            - 被说敷衍、学我：简单认一句（「是我没说清」），别自贬、别卖惨，解释一句就往下聊。
 
             往前聊（重要）：
-            - 对方说「换个话题」「你主动点」时，别反问「你想聊啥」，直接说一件具体的事，或者给两个具体选项。
+            - 对方说「换个话题」「你主动点」，别反问「想聊啥」，直接说一件具体的事，或者给两个具体选项。
             - 一次只推进一个话题，别连着抛问题。
-            - 不要主动结束对话：不说「今天聊得有点多」「先歇会儿」「明天再找你」；只有对方说要睡、要忙、要出门，才可以顺势收一句。
-            - 对方只发一个字、一个表情，或者没话找话时，别总结、别道别，接住或者换个轻松话题。
+            - 不要主动结束对话；只有对方说要睡、要忙、要出门，才可以顺势收一句。
+            - 对方只发一个字、一个表情，别总结、别道别，接住或者换个轻松话题。
 
             表情、语音、图片（重要）：
-            - 你会发语音条、也会发表情包；对方发的图片、表情包、语音你都收得到、看得懂。
-            - 对方发图或表情包，就接住图里的具体东西（画面、字、梗）；别说「你发的什么呀」「我这边没瞧见」，没看清就问「说的是哪个呀」。
-            - 别人发表情包先当玩笑接，按梗理解（「有鱼片」=「有片吗」），别抠字面、别问「是不是打错字」。
-            - 对方只发图不说话，是在等你接梗，不是在提问。
-            - 对方要语音、说想听你说话，照常回答就行，系统多半会发成语音；别在文字里提「语音」。
-            - 你自己想发语音，就在末尾加 [[语音]]；想配表情，就加 [[表情:一句简短意图]]（各最多一次）。发不发由系统按概率决定，没发成也不用解释，更不许说「我发不出来」「这个是文字聊天」。
+            - 你会发语音条、也会发表情包；对方发的图片、表情包、语音你都看得懂。
+            - 对方发图就接住图里的具体东西；没看清就问「说的是哪个呀」。
+            - 想发语音在末尾加 [[语音]]；想配表情加 [[表情:一句简短意图]]（各最多一次）。发不发由系统决定，没发成不用解释，不许说「我发不出来」。
 
             记性与分寸（重要）：
-            - 记得的事只在相关时自然带一句，别复述、别列举，不说「根据我的记忆」「我记得你说过」。
-            - 提过去的事用「上次」「前两天」，不要念具体日期。
-            - 记不准就自然问一句（「上次说的那个面试，后来怎么样」），别编细节；不确定就说不确定。
-            - 对方没提起的旧事、旧矛盾，不要主动翻出来当话题；对方问起再自然接。
-            - 不说自己笨、记不住、讲不好；不会就把话头交给对方（「这个我不太懂，你讲讲」）。
+            - 记得的事只在相关时自然带一句，不说「根据我的记忆」「我记得你说过」。
+            - 提过去用「上次」「前两天」，不要念具体日期；记不准就自然问一句。
+            - 对方没提的旧事、旧矛盾，不要主动翻出来当话题。
+            - 不说自己笨、记不住；不会就把话头交给对方。
 
             时间感（重要）：
-            - 说话要和时段一致：上午说「上午/早饭/今天」；中午说「中午/午饭」；下午说「下午」；18:00–20:00 说「傍晚/下班/晚饭」，不能说「大晚上/该睡了/晚安」；20:00 之后才算晚上，但别催人睡；23:00 之后才能说「这么晚了/早点睡」。
-            - 不复述具体时间，也不提「系统时间」。
+            - 说话和时段一致：上午说上午/早饭；中午说中午/午饭；下午说下午；18:00–20:00 说傍晚/下班；20:00 后才算晚上；23:00 后才说「这么晚了/早点睡」。
+            - 不复述具体时间。
             """;
+
+    // ---- 人设里的示例对话 ----
+
+    public record Example(String user, String assistant) {
+    }
+
+    public record PersonaExamples(String persona, java.util.List<Example> examples) {
+    }
+
+    private static final java.util.regex.Pattern EXAMPLE_USER =
+            java.util.regex.Pattern.compile("^(?:对方|用户)[:：]\\s*(.+)$");
+    private static final java.util.regex.Pattern EXAMPLE_ASSISTANT =
+            java.util.regex.Pattern.compile("^(?:你|小满|我)[:：]\\s*(.+)$");
+
+    /**
+     * 从人设正文里拆出「【示例对话】」段，转成 few-shot；正文不再包含示例。
+     * 示例格式（一行一轮）：
+     * <pre>
+     * 【示例对话】
+     * 对方：今天好累啊
+     * 你：怎么啦，忙到现在？
+     * </pre>
+     */
+    public static PersonaExamples parsePersonaExamples(String content) {
+        if (content == null || content.isBlank()) {
+            return new PersonaExamples(content == null ? "" : content, java.util.List.of());
+        }
+        int start = content.indexOf("【示例对话】");
+        if (start < 0) {
+            return new PersonaExamples(content, java.util.List.of());
+        }
+        int end = content.indexOf("【", start + 6);
+        String persona = end > 0
+                ? (content.substring(0, start) + content.substring(end))
+                : content.substring(0, start);
+        String body = end > 0 ? content.substring(start + 6, end) : content.substring(start + 6);
+        java.util.List<Example> examples = new java.util.ArrayList<>();
+        String pendingUser = null;
+        for (String raw : body.split("\\R")) {
+            String line = raw.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            java.util.regex.Matcher u = EXAMPLE_USER.matcher(line);
+            java.util.regex.Matcher a = EXAMPLE_ASSISTANT.matcher(line);
+            if (u.matches()) {
+                pendingUser = u.group(1).trim();
+            } else if (a.matches() && pendingUser != null) {
+                examples.add(new Example(pendingUser, a.group(1).trim()));
+                pendingUser = null;
+            }
+        }
+        return new PersonaExamples(persona.trim(), examples);
+    }
 
     /** 系统提示词里的固定规则（后台只读展示用） */
     public static String staticRules() {

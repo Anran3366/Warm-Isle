@@ -97,7 +97,7 @@ let settings: Settings = {
   contextRounds: 20,
   maxTokens: 400,
   vision: { enabled: false, maxPerMessage: 3, maxSize: 1024, dailyLimit: 0, emojiAutoImport: false },
-  reply: { maxChars: 60, splitDelayMs: 1200, typingMs: 600, adaptive: true }
+  reply: { maxChars: 60, splitDelayMs: 1200, typingMs: 600, adaptive: true, debounce: true, debounceMs: 1800, debounceMaxMs: 4000, gate: true, gateSkip: 0.45 }
 }
 
 const logs: LogLine[] = []

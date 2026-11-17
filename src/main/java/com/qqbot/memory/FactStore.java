@@ -176,6 +176,32 @@ public class FactStore {
         }
     }
 
+    /**
+     * 用户明确否认某个称呼：把「昵称/称呼/名字」类、值相同的 active 事实标记为 outdated。
+     * 只动称呼类，避免「我不叫外卖」之类的句子误伤同名的其他事实。
+     * 返回被停用的条数，调用方据此判断这次否认是否真的命中旧记忆。
+     */
+    public int deactivateValue(long qqId, String value) {
+        if (value == null || value.isBlank()) {
+            return 0;
+        }
+        String now = LocalDateTime.now().format(TS);
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE facts SET status='outdated', review_note=?, last_confirmed=? "
+                             + "WHERE qq_id=? AND status='active' AND value=? "
+                             + "AND key IN ('昵称','称呼','名字')")) {
+            ps.setString(1, "用户明确否认，自动停用 " + now);
+            ps.setString(2, now);
+            ps.setLong(3, qqId);
+            ps.setString(4, value.trim());
+            return ps.executeUpdate();
+        } catch (Exception e) {
+            log.warn("停用事实失败 qqId={} value={}: {}", qqId, value, e.getMessage());
+            return 0;
+        }
+    }
+
     /** 写入或更新一条事实；低置信度落 pending */
     public boolean upsert(long qqId, String category, String key, String value, double confidence) {
         String now = LocalDateTime.now().format(TS);

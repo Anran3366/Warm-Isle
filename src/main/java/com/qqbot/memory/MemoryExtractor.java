@@ -123,6 +123,7 @@ public class MemoryExtractor {
         LocalDateTime from = (full || wmRaw == null) ? now.minusHours(24) : LocalDateTime.parse(wmRaw, TS);
 
         List<MessageRow> rows = messages.between(qqId, from.format(TS), now.format(TS));
+        String userText = userOnly(rows);
         if (rows.size() < 2) {
             log.debug("qqId={} 窗口内消息不足，跳过抽取", qqId);
             return 0;
@@ -162,6 +163,11 @@ public class MemoryExtractor {
             if (factKey.isEmpty() || value.isEmpty()) {
                 continue;
             }
+            // 「我超威，昨天喝多了」这种语气/笔误不能被当成昵称：称呼类必须原话里明确自报过
+            if (CorrectionGuard.isNameKey(factKey) && !CorrectionGuard.explicitlyIntroduced(userText, value)) {
+                log.info("跳过未明确自报的称呼 qqId={} key={} value={}", qqId, factKey, value);
+                continue;
+            }
             try {
                 facts.upsert(qqId, category, factKey, value, confidence);
                 // 双写：facts 继续写（回滚依据），同时进 memories
@@ -188,6 +194,17 @@ public class MemoryExtractor {
 
         log.info("抽取完成 qqId={} 消息数={} 事实数={} 摘要={}字", qqId, rows.size(), count, summary.length());
         return count;
+    }
+
+    /** 只拼用户说的话，用来校验称呼类事实是否真的出自用户明确自报 */
+    private String userOnly(List<MessageRow> rows) {
+        StringBuilder sb = new StringBuilder();
+        for (MessageRow r : rows) {
+            if ("user".equals(r.role())) {
+                sb.append(r.content()).append('\n');
+            }
+        }
+        return sb.toString();
     }
 
     private String buildTranscript(List<MessageRow> rows) {
@@ -261,5 +278,9 @@ public class MemoryExtractor {
             6. confidence：明确陈述 0.9，上下文推断 0.6，含糊 0.4。
             7. summary 用 1-2 句话概括这次聊天的主要内容与用户状态，不超过 120 字，不要列举事实。
             8. 没有可记录的事实时 facts 输出 []，summary 仍然要写。
+            9. 昵称/称呼只在用户明确说「我叫X」「叫我X」「我的名字是X」时记录；
+               「我超X」「我真是X」这类语气句、吐槽句不要当成昵称。
+            10. 用户否认或纠正此前的称呼（「我不叫X」「别叫我X」）时，绝对不要把 X 记成昵称；
+                改为输出 category=relationship、key=称呼、value=不要叫X。
             """;
 }

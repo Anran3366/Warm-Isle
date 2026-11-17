@@ -120,6 +120,10 @@
                   placeholder="用 Markdown 写人设描述…"
                   class="md-input"
                 />
+                <p class="example-hint">
+                  想更像人：在末尾加一段「【示例对话】」，每行一组「对方：…」/「你：…」，
+                  会自动作为 few-shot 注入，不占正文规则。
+                </p>
               </div>
               <div v-if="editorTab !== 'edit'" class="preview-pane">
                 <div class="md-preview" v-html="renderMarkdown(editContent)" />
@@ -525,6 +529,9 @@ onActivated(() => {
 .editor-body.tab-preview { grid-template-columns: 1fr; }
 .editor-body.tab-split { grid-template-columns: 1fr 1fr; }
 .editor-pane, .preview-pane { min-height: 360px; }
+.example-hint {
+  margin: 6px 2px 0; font-size: 12px; line-height: 1.6; color: var(--c-text-2);
+}
 .md-input :deep(textarea) {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 13px; line-height: 1.7;

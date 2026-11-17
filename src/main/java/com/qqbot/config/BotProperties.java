@@ -155,6 +155,16 @@ public class BotProperties {
         private long typingMs = 600;
         /** 是否根据对方消息长短自适应 */
         private boolean adaptive = true;
+        /** 连发合并：同一用户短时间内的多条文字消息，等成一批再回 */
+        private boolean debounce = true;
+        /** 合并等待（毫秒），来新消息会重置 */
+        private long debounceMs = 1800;
+        /** 合并最长等待（毫秒），防止一直等 */
+        private long debounceMaxMs = 4000;
+        /** 低信息量消息的回复门控：短句/表情可能已读不回或只回很短 */
+        private boolean gate = true;
+        /** 门控里「已读不回」的概率（0~0.9） */
+        private double gateSkip = 0.45;
 
         public int getMaxChars() {
             return maxChars;
@@ -186,6 +196,46 @@ public class BotProperties {
 
         public void setAdaptive(boolean adaptive) {
             this.adaptive = adaptive;
+        }
+
+        public boolean isDebounce() {
+            return debounce;
+        }
+
+        public void setDebounce(boolean debounce) {
+            this.debounce = debounce;
+        }
+
+        public long getDebounceMs() {
+            return debounceMs;
+        }
+
+        public void setDebounceMs(long debounceMs) {
+            this.debounceMs = debounceMs;
+        }
+
+        public long getDebounceMaxMs() {
+            return debounceMaxMs;
+        }
+
+        public void setDebounceMaxMs(long debounceMaxMs) {
+            this.debounceMaxMs = debounceMaxMs;
+        }
+
+        public boolean isGate() {
+            return gate;
+        }
+
+        public void setGate(boolean gate) {
+            this.gate = gate;
+        }
+
+        public double getGateSkip() {
+            return gateSkip;
+        }
+
+        public void setGateSkip(double gateSkip) {
+            this.gateSkip = gateSkip;
         }
     }
 

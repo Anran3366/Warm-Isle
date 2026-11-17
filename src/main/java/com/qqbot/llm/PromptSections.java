@@ -136,7 +136,9 @@ public final class PromptSections {
             case "边界" -> intimacy(ctx);
             // 人设里的「说话方式」和固定规则重复，动态模式下省掉
             case "说话方式" -> false;
-            default -> false;
+            // 用户自己加的小节（如「复盘补充」）必须保留：动态筛选只该筛内置小节，
+            // 不能把用户写的内容默认丢掉（旧实现 default=false，用户的补充从未生效）。
+            default -> true;
         };
     }
 

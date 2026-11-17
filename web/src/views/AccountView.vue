@@ -451,7 +451,7 @@ function poll() {
       }
       if (a.qrcode) {
         qrSrc.value = `/api/account/${a.id}/qrcode?ts=${Date.now()}`
-        qrHint.value = '用手机 QQ 扫码登录'
+        qrHint.value = '用手机 QQ 扫码登录（过期会自动换一张）'
       }
     } catch { /* 忽略 */ }
   }, 2000)
@@ -684,7 +684,7 @@ onBeforeUnmount(() => {
 .delete-hint { margin: 10px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--c-text-2); }
 .delete-hint.danger { color: #f56c6c; }'
 .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
-.qr-img { width: 240px; height: 240px; border-radius: 12px; background: #fff; padding: 8px; }
+.qr-img { width: 264px; height: 264px; border-radius: 12px; background: #fff; padding: 8px; }
 .qr-empty { width: 240px; height: 240px; display: grid; place-items: center; text-align: center; border-radius: 12px; background: var(--c-bg-soft, #f3f5fa); font-size: 13px; color: var(--c-text-2); }
 .qr-hint { margin: 0; font-size: 13px; color: var(--c-text-2); text-align: center; }
 .qr-countdown { margin: 0; font-size: 12px; color: var(--c-text-2); font-variant-numeric: tabular-nums; }
