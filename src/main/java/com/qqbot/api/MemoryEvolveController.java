@@ -95,17 +95,20 @@ public class MemoryEvolveController {
     @PostMapping("/profile")
     public Map<String, Object> saveProfile(@RequestParam long qqId,
                                            @RequestBody Map<String, Object> body) {
-        return personProfile.save(qqId,
+        Map<String, Object> saved = personProfile.save(qqId,
                 string(body.get("address")),
                 string(body.get("stage")),
                 strings(body.get("traits")),
                 strings(body.get("taboos")),
                 dates(body.get("importantDates")));
+        profile.rebuild(qqId);
+        return saved;
     }
 
     @PostMapping("/profile/backfill")
     public Map<String, Object> backfillProfile(@RequestParam long qqId) {
         int changed = personProfile.backfill(qqId);
+        profile.rebuild(qqId);
         return Map.<String, Object>of("updated", changed, "profile", personProfile.get(qqId));
     }
 
