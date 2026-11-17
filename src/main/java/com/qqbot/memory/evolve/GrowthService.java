@@ -45,7 +45,7 @@ public class GrowthService {
             return -1;
         }
         String normalized = cut(content, 60);
-        if (exists(qqId, normalized)) {
+        if (exists(qqId, normalized) || similarExists(qqId, normalized)) {
             return -1;
         }
         String sql = "INSERT INTO growth_notes(qq_id, content, evidence, status, created_at) VALUES(?,?,?,'pending',?)";
@@ -125,6 +125,40 @@ public class GrowthService {
             log.debug("读取成长档案失败: {}", e.getMessage());
         }
         return sb.length() == 0 ? "" : "【你学到的相处方式】\n" + sb;
+    }
+
+    /** 近似重复也算重复：模型换个说法不该每天多一条。 */
+    private boolean similarExists(long qqId, String content) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT content FROM growth_notes WHERE qq_id=? AND status IN ('pending','approved')")) {
+            ps.setLong(1, qqId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if (similar(content, rs.getString(1))) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return false;
+    }
+
+    private static boolean similar(String a, String b) {
+        if (a == null || b == null || a.isBlank() || b.isBlank()) {
+            return false;
+        }
+        int hit = 0;
+        int total = 0;
+        for (int i = 0; i + 1 < a.length(); i++) {
+            total++;
+            if (b.contains(a.substring(i, i + 2))) {
+                hit++;
+            }
+        }
+        return total > 0 && (double) hit / total >= 0.6;
     }
 
     private boolean exists(long qqId, String content) {

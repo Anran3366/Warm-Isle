@@ -136,9 +136,16 @@ public class PersonProfileService {
                 songValues.add(m.value());
             }
         }
+        int beforeTraits = traits.size();
         traits.removeIf(songValues::contains);
+        if (traits.size() != beforeTraits) {
+            changed++;
+        }
 
         for (Memory m : memories.active(qqId)) {
+            if (!"user".equals(m.subject())) {
+                continue;
+            }
             String key = m.key() == null ? "" : m.key();
             String value = m.value() == null ? "" : m.value();
             if (key.contains("称呼") || key.contains("昵称")) {
@@ -208,6 +215,7 @@ public class PersonProfileService {
         String stage = String.valueOf(current.getOrDefault("stage", ""));
         List<String> traits = stringList(current.get("traits"));
         List<String> taboos = stringList(current.get("taboos"));
+        List<Map<String, String>> dates = dateList(current.get("importantDates"));
         int changed = 0;
 
         String newAddress = node.path("address").asText("").trim();
@@ -223,11 +231,37 @@ public class PersonProfileService {
         }
         changed += merge(traits, node.path("traits"), 12, denied);
         changed += merge(taboos, node.path("taboos"), 14, denied);
+        changed += mergeDates(dates, node.path("important_dates"));
+        changed += mergeDates(dates, node.path("importantDates"));
 
         if (changed == 0) {
             return 0;
         }
-        save(qqId, address, stage, traits, taboos, dateList(current.get("importantDates")));
+        save(qqId, address, stage, traits, taboos, dates);
+        return changed;
+    }
+
+    private int mergeDates(List<Map<String, String>> target, JsonNode source) {
+        if (source == null || !source.isArray()) {
+            return 0;
+        }
+        int changed = 0;
+        for (JsonNode item : source) {
+            String md = item.path("md").asText("").trim();
+            String label = item.path("label").asText("").trim();
+            if (!md.matches("\\d{2}-\\d{2}") || label.length() > 10) {
+                continue;
+            }
+            boolean exists = target.stream().anyMatch(d -> md.equals(d.get("md")));
+            if (exists || target.size() >= MAX_LIST) {
+                continue;
+            }
+            Map<String, String> one = new LinkedHashMap<>();
+            one.put("md", md);
+            one.put("label", label);
+            target.add(one);
+            changed++;
+        }
         return changed;
     }
 

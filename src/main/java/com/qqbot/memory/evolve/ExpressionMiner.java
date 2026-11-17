@@ -2,6 +2,7 @@ package com.qqbot.memory.evolve;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qqbot.bot.BotAccountRunner;
 import com.qqbot.llm.DeepSeekClient;
 import com.qqbot.llm.LlmResult;
 import com.qqbot.memory.MessageRow;
@@ -36,14 +37,16 @@ public class ExpressionMiner {
     private final ExpressionService expressions;
     private final DeepSeekClient llm;
     private final SettingStore settings;
+    private final BotAccountRunner accounts;
     private final ObjectMapper mapper = new ObjectMapper();
 
     public ExpressionMiner(MessageStore messages, ExpressionService expressions,
-                           DeepSeekClient llm, SettingStore settings) {
+                           DeepSeekClient llm, SettingStore settings, BotAccountRunner accounts) {
         this.messages = messages;
         this.expressions = expressions;
         this.llm = llm;
         this.settings = settings;
+        this.accounts = accounts;
     }
 
     @Scheduled(cron = "0 10 2 * * 0", zone = "Asia/Shanghai")
@@ -51,17 +54,19 @@ public class ExpressionMiner {
         if (!"true".equalsIgnoreCase(settings.get("memory.evolve.enabled", "true"))) {
             return;
         }
-        int n = 0;
-        for (Long qqId : messages.users()) {
-            if (n++ >= MAX_USERS) {
-                break;
+        accounts.forEach(botId -> {
+            int n = 0;
+            for (Long qqId : messages.users()) {
+                if (n++ >= MAX_USERS) {
+                    break;
+                }
+                try {
+                    mine(qqId, 7);
+                } catch (Exception e) {
+                    log.warn("表达挖掘失败 qqId={}: {}", qqId, e.getMessage());
+                }
             }
-            try {
-                mine(qqId, 7);
-            } catch (Exception e) {
-                log.warn("表达挖掘失败 qqId={}: {}", qqId, e.getMessage());
-            }
-        }
+        });
     }
 
     /** @return 新写入的候选条数 */

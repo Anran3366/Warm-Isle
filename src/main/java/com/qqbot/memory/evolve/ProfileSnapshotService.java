@@ -84,14 +84,14 @@ public class ProfileSnapshotService {
             if (traits.size() >= 2) {
                 break;
             }
-            if (!t.isBlank()) {
+            if (!t.isBlank() && !t.startsWith("不要叫")) {
                 traits.add(t);
             }
         }
         List<Memory> candidates = new ArrayList<>();
 
         for (Memory m : memories.active(qqId)) {
-            if (m.key() == null || m.value() == null) {
+            if (!"user".equals(m.subject()) || m.key() == null || m.value() == null) {
                 continue;
             }
             if (m.key().contains("称呼") || m.key().contains("昵称")) {

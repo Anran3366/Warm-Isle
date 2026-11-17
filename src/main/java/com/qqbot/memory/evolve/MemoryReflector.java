@@ -89,12 +89,9 @@ public class MemoryReflector {
             log.warn("可用内存不足，跳过记忆反思: {}MB", availableMb());
             return;
         }
+        String since = LocalDateTime.now().minusHours(24).format(TS);
         accounts.forEach(botId -> {
-            int n = 0;
-            for (Long qqId : messages.users()) {
-                if (n++ >= MAX_USERS) {
-                    break;
-                }
+            for (Long qqId : messages.recentUsers(since, MAX_USERS)) {
                 try {
                     reflect(qqId, false);
                 } catch (Exception e) {
@@ -159,6 +156,8 @@ public class MemoryReflector {
         int growths = 0;
         int conflicts = 0;
         int profileUpdated = 0;
+        Set<String> writtenInsights = new LinkedHashSet<>();
+        Set<String> writtenLessons = new LinkedHashSet<>();
 
         for (JsonNode item : arr(root, "insights")) {
             String key = text(item, "key", 12);
@@ -170,11 +169,15 @@ public class MemoryReflector {
             if (deniedHit(denied, key + value)) {
                 continue;
             }
+            if (similarTopic(active, writtenInsights, "洞察·", key)) {
+                continue;
+            }
             long id = memories.upsert(qqId, new MemoryStore.Draft("profile", "user",
                     "洞察·" + key, value, "reflection:insight", 0.7,
                     clamp(item.path("confidence").asDouble(0.7)), 0, null, null, null));
             if (id > 0) {
                 saveEvidence(id, evidence);
+                writtenInsights.add(key);
                 insights++;
             }
         }
@@ -189,11 +192,15 @@ public class MemoryReflector {
             if (deniedHit(denied, situation + value)) {
                 continue;
             }
+            if (similarTopic(active, writtenLessons, "经验·", situation)) {
+                continue;
+            }
             long id = memories.upsert(qqId, new MemoryStore.Draft("relation", "user",
                     "经验·" + situation, value, "reflection:lesson", 0.65,
                     clamp(item.path("confidence").asDouble(0.65)), 0, null, null, null));
             if (id > 0) {
                 saveEvidence(id, evidence);
+                writtenLessons.add(situation);
                 lessons++;
             }
         }
@@ -323,6 +330,39 @@ public class MemoryReflector {
         return out;
     }
 
+    /** 同一个话题只留一条：key 的二元组重叠 ≥0.5 视为同一件事。 */
+    private static boolean similarTopic(List<Memory> active, Set<String> written, String prefix, String key) {
+        for (Memory m : active) {
+            if (m.key() == null || !m.key().startsWith(prefix)) {
+                continue;
+            }
+            if (overlap(key, m.key().substring(prefix.length())) >= 0.5) {
+                return true;
+            }
+        }
+        for (String other : written) {
+            if (overlap(key, other) >= 0.5) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double overlap(String a, String b) {
+        if (a == null || b == null || a.isBlank() || b.isBlank()) {
+            return 0;
+        }
+        int hit = 0;
+        int total = 0;
+        for (int i = 0; i + 1 < a.length(); i++) {
+            total++;
+            if (b.contains(a.substring(i, i + 2))) {
+                hit++;
+            }
+        }
+        return total == 0 ? 0 : (double) hit / total;
+    }
+
     private static boolean deniedHit(Set<String> denied, String text) {
         for (String term : denied) {
             if (text.contains(term)) {
@@ -428,5 +468,6 @@ public class MemoryReflector {
             4. 只写对下次聊天真正有用的；泛泛而谈（“用户喜欢聊天”）不要。
             5. conflicts 只在两条记忆明显互相矛盾时写。
             6. profile 只写有明确依据的；称呼以对方明确说的为准，stage 没把握就留空。
+            7. 同一个话题只写一条；已有记忆覆盖同一话题时复用它的 key，不要造新词。
             """;
 }

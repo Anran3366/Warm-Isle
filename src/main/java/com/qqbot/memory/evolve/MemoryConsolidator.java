@@ -80,6 +80,8 @@ public class MemoryConsolidator {
                     continue;
                 }
                 Memory winner = active.stream()
+                        .filter(m -> !archivedIds.contains(m.id()))
+                        .filter(m -> "user".equals(m.subject()))
                         .filter(m -> isNameKey(m.key()) && !"archived".equals(m.status()))
                         .filter(m -> m.value() != null && !m.value().equals(f.value()))
                         .findFirst().orElse(null);
@@ -104,7 +106,7 @@ public class MemoryConsolidator {
     private int keepNameGroup(List<Memory> active, java.util.Set<Long> archivedIds) {
         List<Memory> group = new ArrayList<>();
         for (Memory m : active) {
-            if (isNameKey(m.key())) {
+            if (isNameKey(m.key()) && "user".equals(m.subject())) {
                 group.add(m);
             }
         }
@@ -147,10 +149,14 @@ public class MemoryConsolidator {
                 .comparingDouble(Memory::importance)
                 .thenComparingDouble(Memory::strength)
                 .reversed());
+        Memory keep = sorted.stream().filter(Memory::pinned).findFirst().orElse(sorted.get(0));
         int archived = 0;
-        for (int i = 1; i < sorted.size(); i++) {
-            archived += memories.setStatus(sorted.get(i).id(), "archived");
-            archivedIds.add(sorted.get(i).id());
+        for (Memory m : sorted) {
+            if (m.id() == keep.id()) {
+                continue;
+            }
+            archived += memories.setStatus(m.id(), "archived");
+            archivedIds.add(m.id());
         }
         return archived;
     }

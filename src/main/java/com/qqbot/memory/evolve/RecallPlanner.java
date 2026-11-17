@@ -57,7 +57,8 @@ public class RecallPlanner {
         try {
             List<Memory> anniversaries = memories.anniversaries(qqId, LocalDate.now());
             if (!anniversaries.isEmpty()) {
-                extras.add("【今天是个日子】- " + cut(anniversaries.get(0).value(), 40));
+                extras.add("【可以自然带一句】今天是个日子："
+                        + cut(anniversaries.get(0).value(), 40));
             }
         } catch (Exception ignored) {
             // 纪念日失败不影响回复
@@ -78,9 +79,10 @@ public class RecallPlanner {
                 boolean hasRelevant = !recall.recall(qqId, userText, 1).isEmpty();
                 if (!hasRelevant) {
                     Memory pick = mostEmotional(memories.recentEvents(qqId, 14, 6));
-                    if (pick != null && (l0 == null || pick.value() == null || !l0.contains(pick.value()))) {
-                        extras.add("（你忽然想起："
-                                + cut(pick.key() + "：" + pick.value(), 60) + "）");
+                    if (pick != null && (l0 == null || pick.value() == null
+                            || !l0.contains(cut(pick.value(), 20)))) {
+                        extras.add("【可以自然带一句】你忽然想起："
+                                + cut(pick.key() + "：" + pick.value(), 60));
                     }
                 }
             } catch (Exception ignored) {

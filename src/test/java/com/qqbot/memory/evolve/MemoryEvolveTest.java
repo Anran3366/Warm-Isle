@@ -80,6 +80,8 @@ class MemoryEvolveTest {
     @Test
     void growthNeedsApprovalBeforePrompt() {
         growth.addPending(QQ, "他加班时先别问吃什么，先让他歇会儿", "[1]");
+        growth.addPending(QQ, "他加班时先别问吃什么，让他先歇会儿", "[1]");
+        assertEquals(1, growth.list(QQ, "pending", 10).size(), "近似重复的成长条不该重复入库");
         assertEquals("", growth.approvedBlock(QQ), "未采纳的成长条不能进 prompt");
 
         long id = ((Number) growth.list(QQ, "pending", 10).get(0).get("id")).longValue();
@@ -118,7 +120,8 @@ class MemoryEvolveTest {
     @Test
     void profileAutoFillRespectsDeniedName() throws Exception {
         var node = new ObjectMapper().readTree("""
-                {"address":"超威","stage":"熟悉","traits":["凌晨还不睡"],"taboos":["别说教"]}
+                {"address":"超威","stage":"熟悉","traits":["凌晨还不睡"],"taboos":["别说教"],
+                 "important_dates":[{"md":"08-12","label":"生日"}]}
                 """);
         personProfile.applyReflection(QQ, node, java.util.Set.of(1L), java.util.Set.of("超威"));
         personProfile.backfill(QQ);
@@ -127,6 +130,8 @@ class MemoryEvolveTest {
         assertEquals("熟悉", p.get("stage"));
         assertTrue(((java.util.List<?>) p.get("traits")).contains("凌晨还不睡"));
         assertTrue(((java.util.List<?>) p.get("taboos")).contains("别说教"));
+        assertTrue(((java.util.List<?>) p.get("importantDates")).stream()
+                .anyMatch(d -> "08-12".equals(((Map<?, ?>) d).get("md"))));
     }
 
     @Test
@@ -137,6 +142,19 @@ class MemoryEvolveTest {
         var items = timeline.timeline(QQ, 50);
         assertTrue(items.stream().anyMatch(i -> "insight".equals(i.get("kind"))));
         assertTrue(items.stream().anyMatch(i -> "growth".equals(i.get("kind"))));
+    }
+
+    @Test
+    void consolidatorDoesNotKillCorrectFactBecauseOfArchivedMemory() {
+        facts.upsert(QQ, "profile", "昵称", "安冉", 0.9);
+        memories.upsert(QQ, new MemoryStore.Draft("profile", "user", "称呼", "超威", "chat",
+                0.5, 0.9, 0, null, null, null));
+        memories.upsert(QQ, new MemoryStore.Draft("profile", "user", "称呼", "安冉", "chat",
+                0.9, 0.9, 0, null, null, null));
+
+        consolidator.run(QQ);
+        assertTrue(facts.active(QQ).stream().anyMatch(f -> "安冉".equals(f.value())),
+                "被归档的旧称呼不能反过来把正确 facts 停用");
     }
 
     @Test
@@ -198,6 +216,9 @@ class MemoryEvolveTest {
             throw new IllegalStateException(e);
         }
         assertTrue(evidenceRows > 0, "证据必须落库");
+
+        Map<String, Object> second = reflector.reflect(QQ, true);
+        assertEquals(0, ((Number) second.get("insights")).intValue(), "同一话题重复反思不该再造一条: " + second);
         assertNotNull(result);
     }
 }

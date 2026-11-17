@@ -353,7 +353,7 @@ v2 解决「记得住、会遗忘、能召回」；v3 解决「会整理、会�
 - **每天 00:20**：`MemoryReflector.nightly()` 遍历账号/用户（每账号最多 20 人，内存 <500MB 跳过）：
   - 输入：近 24h 对话（≤2500 字）、近 3 天 episode、活跃记忆（≤30 条带 id）、昨天复盘问题、否认称呼；
   - 输出 JSON：`insights` / `lessons` / `growth` / `profile` / `conflicts`；
-  - 校验：evidence 必须命中该用户已有记忆 id；否认词过滤；长度上限（洞察 4 / 经验 3 / 成长 2）；
+  - 校验：evidence 必须命中该用户已有记忆 id；否认词过滤；长度上限（洞察 4 / 经验 3 / 成长 2）；同一话题（key 二元组重叠 ≥0.5）跳过，避免每天换词重复写；
   - 写库：insight → `memories(type=profile, key=洞察·…, source=reflection:insight)`；lesson → `type=relation, key=经验·…`；growth → `growth_notes(pending)`；conflict → 旧记忆 archived；evidence → `memory_evidence`；
   - 收尾：`ProfileSnapshotService.rebuild()` + `PersonProfileService.applyReflection/backfill` + `MemoryConsolidator.run()`。
 - **每周日 02:10**：`ExpressionMiner.weekly()` 从「assistant 说完、user 3 分钟内接住且无否定」的句子里抽 `(situation, text)`，写 `expressions(pending)`。
@@ -370,7 +370,7 @@ ALTER TABLE friend_profile ADD address/stage/traits/taboos/important_dates/profi
 
 ### 9.4 成长与表达：人工采纳
 
-- 成长 `pending → approved/rejected`；只有 approved 进 prompt（≤3 条 / 120 字），人格卡本身不改；
+- 成长 `pending → approved/rejected`；近似措辞（二元组重叠 ≥0.6）不再重复入库；只有 approved 进 prompt（≤3 条 / 120 字），人格卡本身不改；
 - 表达 `pending → approved/rejected`；只有 approved 被检索，最多 2 条 / 100 字；
 - 后台「记忆进化」页可审、可改；人物档案也可手改。
 

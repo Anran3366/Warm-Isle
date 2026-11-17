@@ -216,7 +216,7 @@ public class MemoryRecall {
             return "";
         }
         sb.append("以上只是背景：对方不提起，就别主动拿出来聊，尤其别翻旧矛盾；对方问起再自然接。"
-                + "标了「可以自然带一句」的除外。");
+                + "标了「可以自然」的除外。");
         return sb.toString();
     }
 

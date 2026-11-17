@@ -19,6 +19,8 @@ import java.util.List;
 @Component
 public class MessageStore {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MessageStore.class);
+
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final Db db;
@@ -337,6 +339,25 @@ public class MessageStore {
     }
 
     /** 所有有聊天记录的用户 */
+    /** 最近有消息的用户，按最后一条消息倒序；反思/挖掘用，避免只覆盖前 N 个。 */
+    public List<Long> recentUsers(String since, int limit) {
+        List<Long> out = new java.util.ArrayList<>();
+        String sql = "SELECT qq_id FROM messages WHERE created_at>=? GROUP BY qq_id "
+                + "ORDER BY MAX(created_at) DESC LIMIT ?";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, since);
+            ps.setInt(2, Math.max(1, limit));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(rs.getLong(1));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("读取最近用户失败: {}", e.getMessage());
+        }
+        return out;
+    }
+
     public List<Long> users() {
         List<Long> ids = new ArrayList<>();
         try (Connection c = db.open();
