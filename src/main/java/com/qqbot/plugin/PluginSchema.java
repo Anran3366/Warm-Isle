@@ -74,6 +74,42 @@ public final class PluginSchema {
             "CREATE INDEX IF NOT EXISTS idx_plugin_runs_plugin ON plugin_runs(plugin_id, created_at)",
             "CREATE INDEX IF NOT EXISTS idx_plugin_runs_qq ON plugin_runs(invoke_id)",
             """
+            CREATE TABLE IF NOT EXISTS plugin_schedules (
+              plugin_id       TEXT NOT NULL,
+              schedule_id     TEXT NOT NULL,
+              cron            TEXT NOT NULL,
+              timezone        TEXT NOT NULL,
+              target          TEXT NOT NULL DEFAULT 'dm',
+              scope           TEXT NOT NULL DEFAULT 'per-user',
+              recipients_key  TEXT,
+              action          TEXT NOT NULL,
+              content_source  TEXT NOT NULL DEFAULT 'model',
+              template        TEXT,
+              catch_up        TEXT NOT NULL DEFAULT 'skip',
+              grace_minutes   INTEGER NOT NULL DEFAULT 10,
+              enabled         INTEGER NOT NULL DEFAULT 1,
+              last_occurrence TEXT,
+              updated_at      TEXT NOT NULL,
+              PRIMARY KEY(plugin_id, schedule_id)
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS plugin_schedule_runs (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              plugin_id   TEXT NOT NULL,
+              schedule_id TEXT NOT NULL,
+              user_id     INTEGER NOT NULL DEFAULT 0,
+              occurrence  TEXT NOT NULL,
+              status      TEXT NOT NULL,
+              error       TEXT,
+              output      TEXT,
+              started_at  TEXT NOT NULL,
+              finished_at TEXT,
+              UNIQUE(plugin_id, schedule_id, user_id, occurrence)
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_plugin_schedule_due ON plugin_schedule_runs(plugin_id, occurrence)",
+            """
             CREATE TABLE IF NOT EXISTS plugin_proposals (
               id          INTEGER PRIMARY KEY AUTOINCREMENT,
               plugin_id   TEXT NOT NULL,

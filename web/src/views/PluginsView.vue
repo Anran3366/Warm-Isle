@@ -481,6 +481,118 @@
               这个插件没有声明可调项：所有参数都写死在包内 manifest.json 里，后台没有可改的项。
             </p>
 
+            <div v-if="configFields.length" class="plugin-config-form">
+              <div v-for="f in configFields" :key="f.key" class="config-row">
+                <label>{{ f.label || f.key }}</label>
+                <div class="config-control">
+                  <el-select
+                    v-if="f.type === 'users'"
+                    v-model="configValues[f.key]"
+                    multiple
+                    filterable
+                    collapse-tags
+                    placeholder="选择聊过天的人"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="u in pluginUsers"
+                      :key="u.qqId"
+                      :label="`${u.name}（${u.qqId}）`"
+                      :value="Number(u.qqId)"
+                    />
+                  </el-select>
+                  <el-select
+                    v-else-if="f.type === 'user'"
+                    v-model="configValues[f.key]"
+                    filterable
+                    placeholder="选择聊过天的人"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="u in pluginUsers"
+                      :key="u.qqId"
+                      :label="`${u.name}（${u.qqId}）`"
+                      :value="Number(u.qqId)"
+                    />
+                  </el-select>
+                  <el-select
+                    v-else-if="f.type === 'select'"
+                    v-model="configValues[f.key]"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="o in (f.options || [])"
+                      :key="o.value"
+                      :label="o.label || o.value"
+                      :value="o.value"
+                    />
+                  </el-select>
+                  <el-switch v-else-if="f.type === 'switch'" v-model="configValues[f.key]" />
+                  <el-input-number
+                    v-else-if="f.type === 'number'"
+                    v-model="configValues[f.key]"
+                    :min="f.min ?? undefined"
+                    :max="f.max ?? undefined"
+                  />
+                  <el-input
+                    v-else-if="f.type === 'textarea'"
+                    v-model="configValues[f.key]"
+                    type="textarea"
+                    :rows="3"
+                  />
+                  <el-input v-else v-model="configValues[f.key]" />
+                  <div v-if="f.description" class="muted">{{ f.description }}</div>
+                </div>
+              </div>
+              <el-button type="primary" size="small" :loading="configSaving" @click="savePluginConfig">
+                保存配置
+              </el-button>
+            </div>
+
+            <template v-if="dataTables.length">
+              <h5 class="sub-head">数据（{{ tableTotal }} 条）</h5>
+              <el-tabs v-model="activeTable" @tab-change="loadRows">
+                <el-tab-pane
+                  v-for="t in dataTables"
+                  :key="t.name"
+                  :label="t.label || t.name"
+                  :name="t.name"
+                />
+              </el-tabs>
+              <el-empty v-if="!tableRows.length" description="还没有记录" :image-size="60" />
+              <el-table v-else :data="tableRows" size="small" border>
+                <el-table-column
+                  v-for="c in displayColumns"
+                  :key="c.name"
+                  :label="c.label || c.name"
+                  show-overflow-tooltip
+                >
+                  <template #default="{ row }">{{ cell(row, c) }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="80">
+                  <template #default="{ row }">
+                    <el-button text size="small" @click="openRecord(row)">查看</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
+            <template v-if="schedules.length">
+              <h5 class="sub-head">定时任务</h5>
+              <div v-for="s in schedules" :key="s.scheduleId" class="schedule-row">
+                <div>
+                  <b>{{ s.scheduleId }}</b>
+                  <span class="muted"> {{ s.cron }} · {{ s.scope }} · {{ s.enabled ? '启用' : '停用' }}</span>
+                </div>
+                <div>
+                  <el-button size="small" :loading="runningSchedule" @click="runSchedule(s, true)">预览</el-button>
+                  <el-button size="small" type="primary" :loading="runningSchedule" @click="runSchedule(s, false)">
+                    立即发送
+                  </el-button>
+                </div>
+              </div>
+            </template>
+
             <template v-if="assetsRows.length">
               <h5 class="sub-head">包内素材（{{ assetsRows.length }}）</h5>
               <el-table :data="assetsRows" size="small" border>
@@ -627,6 +739,12 @@
 
         </template>
       </div>
+      <el-dialog v-model="recordVisible" title="记录详情" width="620px">
+        <div class="record-content">{{ recordContent }}</div>
+      </el-dialog>
+      <el-dialog v-model="runVisible" title="生成结果" width="620px">
+        <div class="record-content">{{ runText }}</div>
+      </el-dialog>
     </el-drawer>
   </div>
 </template>
@@ -1022,6 +1140,115 @@ const examples = computed<string[]>(() => detail.value?.manifest?.intent?.exampl
 const actions = computed<any[]>(() => detail.value?.manifest?.actions || [])
 const catalogEntries = computed<any[]>(() => detail.value?.manifest?.catalog?.entries || [])
 const configFields = computed<any[]>(() => detail.value?.manifest?.config || [])
+const configValues = ref<Record<string, any>>({})
+const pluginUsers = ref<any[]>([])
+const configSaving = ref(false)
+const dataTables = ref<any[]>([])
+const activeTable = ref('')
+const tableRows = ref<any[]>([])
+const tableColumns = ref<any[]>([])
+const tableTotal = ref(0)
+const recordVisible = ref(false)
+const recordContent = ref('')
+const schedules = ref<any[]>([])
+const runVisible = ref(false)
+const runText = ref('')
+const runningSchedule = ref(false)
+
+const displayColumns = computed<any[]>(() =>
+  tableColumns.value.filter((c: any) => c.name !== 'bot_id' && c.name !== 'id'))
+
+async function loadPluginExtras() {
+  const id = detail.value?.id
+  if (!id) return
+  configValues.value = {}
+  dataTables.value = []
+  schedules.value = []
+  if (configFields.value.length) {
+    try {
+      const r = await call<any>(`/api/plugins/${encodeURIComponent(id)}/config`)
+      configValues.value = r.values || {}
+      pluginUsers.value = await call<any[]>('/api/memories/graph/users')
+    } catch { /* 配置读取失败不阻塞详情 */ }
+  }
+  try {
+    const t = await call<any>(`/api/plugins/${encodeURIComponent(id)}/tables`)
+    dataTables.value = t.storage?.tables || []
+    if (dataTables.value.length) {
+      activeTable.value = dataTables.value[0].name
+      await loadRows()
+    }
+  } catch { /* 没有声明表也正常 */ }
+  try {
+    const s = await call<any>(`/api/plugins/${encodeURIComponent(id)}/schedules`)
+    schedules.value = s.items || []
+  } catch { /* 没有定时也正常 */ }
+}
+
+async function loadRows() {
+  const id = detail.value?.id
+  if (!id || !activeTable.value) return
+  const r = await call<any>(
+    `/api/plugins/${encodeURIComponent(id)}/tables/${activeTable.value}/rows?page=1&size=20`)
+  tableRows.value = r.items || []
+  tableColumns.value = r.columns || []
+  tableTotal.value = r.total || 0
+}
+
+async function savePluginConfig() {
+  const id = detail.value?.id
+  if (!id) return
+  configSaving.value = true
+  try {
+    await call<any>(`/api/plugins/${encodeURIComponent(id)}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(configValues.value),
+    })
+    ElMessage.success('配置已保存')
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    configSaving.value = false
+  }
+}
+
+function cell(row: any, col: any): string {
+  const value = row[col.name]
+  if (value === null || value === undefined) return '-'
+  if (col.name === 'user_id') {
+    const u = pluginUsers.value.find((x: any) => String(x.qqId) === String(value))
+    return u ? `${u.name}（${value}）` : String(value)
+  }
+  const text = String(value)
+  return col.ui === 'longtext' && text.length > 60 ? text.slice(0, 60) + '…' : text
+}
+
+function openRecord(row: any) {
+  recordContent.value = row.content || JSON.stringify(row, null, 2)
+  recordVisible.value = true
+}
+
+async function runSchedule(s: any, dryRun: boolean) {
+  const id = detail.value?.id
+  if (!id) return
+  runningSchedule.value = true
+  try {
+    const targets = configValues.value.targetUsers
+    const target = Array.isArray(targets) && targets.length ? targets[0] : 0
+    const r = await call<any>(
+      `/api/plugins/${encodeURIComponent(id)}/schedules/${s.scheduleId}/run`
+      + `?qqId=${target}&dryRun=${dryRun}&save=${!dryRun}`,
+      { method: 'POST' })
+    runText.value = r.result?.text || JSON.stringify(r)
+    runVisible.value = true
+    if (!dryRun) ElMessage.success('已发送')
+  } catch (e: any) {
+    ElMessage.error(e.message || '生成失败')
+  } finally {
+    runningSchedule.value = false
+  }
+}
 
 /** 包内素材：catalog 里带 file 的条目，直接对应安装目录里的真实文件 */
 const assetsRows = computed<any[]>(() =>
@@ -1069,6 +1296,7 @@ async function openDetail(row: any, focusConfig = false) {
   versionsInfo.value = null
   try {
     detail.value = await call<any>(`/api/plugins/${encodeURIComponent(row.id)}`)
+    await loadPluginExtras()
     endpointInput.value =
       detail.value?.endpoint || detail.value?.manifest?.local?.endpointHint || ''
     // 版本信息单独一个接口：详情页要能立刻判断「能不能回滚」
@@ -1092,11 +1320,17 @@ async function openDetail(row: any, focusConfig = false) {
 
 // 插件接口统一走真实后端（不进 mock 层，避免开发态被假数据挡住）
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers: Record<string, string> = {
+    'X-QQ-Id': localStorage.getItem('activeQq') || '',
+    ...(init.headers as Record<string, string> || {}),
+  }
+  const activeBot = localStorage.getItem('activeBotId')
+  if (activeBot) headers['X-Bot-Id'] = activeBot
   const res = await fetch(path, {
     credentials: 'include',
     cache: 'no-store',
     ...init,
-    headers: { 'X-QQ-Id': localStorage.getItem('activeQq') || '', ...(init.headers || {}) },
+    headers,
   })
   if (!res.ok) {
     let msg = `请求失败 ${res.status}`
@@ -1686,4 +1920,10 @@ onMounted(() => {
   font-size: 12px;
   line-height: 1.5;
 }
+.plugin-config-form { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.config-row { display: flex; gap: 12px; align-items: flex-start; }
+.config-row > label { width: 96px; flex: none; color: var(--el-text-color-regular); font-size: 13px; padding-top: 6px; }
+.config-control { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.schedule-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--el-border-color-light); }
+.record-content { white-space: pre-wrap; line-height: 1.7; max-height: 55vh; overflow: auto; }
 </style>

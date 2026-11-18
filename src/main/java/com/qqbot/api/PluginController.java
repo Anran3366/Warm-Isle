@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -48,6 +49,9 @@ public class PluginController {
     private final com.qqbot.plugin.PluginHealthMonitor healthMonitor;
     private final com.fasterxml.jackson.databind.ObjectMapper mapper;
     private final Db db;
+    private final com.qqbot.plugin.data.PluginConfigService configs;
+    private final com.qqbot.plugin.data.PluginDataStore store;
+    private final com.qqbot.plugin.PluginScheduler scheduler;
 
     public PluginController(PluginRegistry registry, PluginInstaller installer,
                             PluginProperties props,
@@ -56,7 +60,10 @@ public class PluginController {
                             DataExecutor dataExecutor, PromptExecutor promptExecutor,
                             HostedExecutor hostedExecutor, PluginStoreClient storeClient,
                             com.qqbot.plugin.PluginHealthMonitor health,
-                            com.fasterxml.jackson.databind.ObjectMapper mapper, Db db) {
+                            com.fasterxml.jackson.databind.ObjectMapper mapper, Db db,
+                            com.qqbot.plugin.data.PluginConfigService configs,
+                            com.qqbot.plugin.data.PluginDataStore store,
+                            com.qqbot.plugin.PluginScheduler scheduler) {
         this.registry = registry;
         this.installer = installer;
         this.props = props;
@@ -69,6 +76,9 @@ public class PluginController {
         this.healthMonitor = health;
         this.mapper = mapper;
         this.db = db;
+        this.configs = configs;
+        this.store = store;
+        this.scheduler = scheduler;
     }
 
     @GetMapping
@@ -516,6 +526,138 @@ public class PluginController {
             }
         }
         return out;
+    }
+
+    @GetMapping("/{id}/config")
+    public Map<String, Object> config(@PathVariable String id) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("fields", p.manifest().configFieldsOrEmpty());
+        out.put("values", configs.read(p));
+        return out;
+    }
+
+    @PutMapping("/{id}/config")
+    public Map<String, Object> saveConfig(@PathVariable String id,
+                                          @RequestBody Map<String, Object> body) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        Map<String, Object> saved = configs.save(p, body);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("values", saved);
+        return out;
+    }
+
+    @GetMapping("/{id}/tables")
+    public Map<String, Object> tables(@PathVariable String id) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("storage", p.manifest().storage());
+        out.put("stats", store.stats(p, botId()));
+        return out;
+    }
+
+    @GetMapping("/{id}/tables/{table}/rows")
+    public Map<String, Object> rows(@PathVariable String id, @PathVariable String table,
+                                    @RequestParam(defaultValue = "1") int page,
+                                    @RequestParam(defaultValue = "20") int size,
+                                    @RequestParam(required = false) Long qqId) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        long botId = botId();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("items", store.list(p, table, botId, qqId, page, size));
+        out.put("total", store.count(p, table, botId, qqId));
+        out.put("page", Math.max(1, page));
+        out.put("size", Math.min(200, Math.max(1, size)));
+        out.put("columns", p.manifest().table(table) == null
+                ? List.of() : p.manifest().table(table).columns());
+        return out;
+    }
+
+    @GetMapping("/{id}/tables/{table}/rows/{rowId}")
+    public Map<String, Object> row(@PathVariable String id, @PathVariable String table,
+                                   @PathVariable long rowId) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        Map<String, Object> row = store.get(p, table, botId(), rowId);
+        return row == null ? Map.of("ok", false, "message", "记录不存在")
+                : Map.of("ok", true, "row", row);
+    }
+
+    @DeleteMapping("/{id}/tables/{table}/rows/{rowId}")
+    public Map<String, Object> deleteRow(@PathVariable String id, @PathVariable String table,
+                                         @PathVariable long rowId) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        return Map.of("ok", true, "deleted", store.delete(p, table, botId(), rowId));
+    }
+
+    @GetMapping("/{id}/schedules")
+    public Map<String, Object> schedules(@PathVariable String id) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        List<Map<String, Object>> all = scheduler.schedules();
+        List<Map<String, Object>> mine = new ArrayList<>();
+        for (Map<String, Object> row : all) {
+            if (id.equals(row.get("pluginId"))) {
+                mine.add(row);
+            }
+        }
+        return Map.of("ok", true, "items", mine);
+    }
+
+    @PostMapping("/{id}/schedules/{sid}/run")
+    public Map<String, Object> runSchedule(@PathVariable String id, @PathVariable String sid,
+                                           @RequestParam(defaultValue = "0") long qqId,
+                                           @RequestParam(defaultValue = "true") boolean dryRun,
+                                           @RequestParam(defaultValue = "false") boolean save) {
+        InstalledPlugin p = registry.find(id);
+        if (p == null) {
+            return Map.of("ok", false, "message", "插件未安装");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.put("result", scheduler.runNow(p, sid, botId(), qqId, dryRun, save));
+        return out;
+    }
+
+    @GetMapping("/{id}/schedule-runs")
+    public Map<String, Object> scheduleRuns(@PathVariable String id,
+                                            @RequestParam(defaultValue = "50") int limit) {
+        List<Map<String, Object>> all = scheduler.runs(limit);
+        List<Map<String, Object>> mine = new ArrayList<>();
+        for (Map<String, Object> row : all) {
+            if (id.equals(row.get("pluginId"))) {
+                mine.add(row);
+            }
+        }
+        return Map.of("ok", true, "items", mine);
+    }
+
+    private long botId() {
+        Long id = com.qqbot.bot.BotContext.get();
+        return id == null ? 1L : id;
     }
 
     private String manifestHash(String id) {

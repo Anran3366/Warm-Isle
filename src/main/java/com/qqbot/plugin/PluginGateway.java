@@ -218,6 +218,12 @@ public class PluginGateway {
         return true;
     }
 
+    /** 定时/后台触发：不走 intent 路由，直接执行声明过的 action。 */
+    public PluginOutput invokeScheduled(InstalledPlugin plugin, String action,
+                                        Map<String, String> params, long qqId) {
+        return execute(plugin, action, params, qqId);
+    }
+
     private PluginOutput execute(InstalledPlugin plugin, String action, Map<String, String> params,
                                  long qqId) {
         if (plugin.manifest().usesData()) {

@@ -24,6 +24,7 @@
 | 相关文章（blog） | ✅ | `web.example.com/blog/`：论坛式列表 + MD 阅读页；密码上传（front-matter 解析）；阅读量（同 IP 同日去重）；sitemap/RSS/JSON-LD。服务 `warm-isle-blog`（Node，127.0.0.1:3300，专用用户 blogapp）；掘金连载 12 篇 + 手册/项目介绍 21 篇，共 33 篇 |
 | 博客每日更新 | ✅ | 每天 10:00 systemd timer 触发：DeepSeek 按 40 个主题池生成新文章（标题/slug 查重）→ 博客上传 → IndexNow 推送；文章带 FAQPage JSON-LD，`/blog/llms.txt` 与 AI 爬虫放行 |
 | 插件商店 | ✅ | 官方商店 A 审核分发，B/C/D 只读已审核索引；data/prompt/hosted/local 四类 runtime；Ed25519 验签 + 密钥轮换；已安装可升级、changelog、hosted/local 服务版本巡检；唱歌包 1.0.2 |
+| 插件框架 v3 | ✅ | 作者声明 `config` / `storage.tables` / `schedules`；后台自动配置表单、每插件独立 SQLite（`data/plugin-data/<id>.db`）、数据列表/详情、定时手动触发；周报插件验证 |
 | 主动消息 | ✅ | 按「机器人 × 聊天对象」；早安/晚安/沉默/跟进/情感记忆 |
 | 知识库 | ✅ 公用 | 所有账号共享；支持生成人设 / 台词风格 / 仅入库 |
 | 表情包 | ✅ 公用 | 自动学习与发送 |

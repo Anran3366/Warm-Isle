@@ -118,7 +118,7 @@ class PromptExecutorTest {
                 raw.hosted(), raw.local(), raw.permissions(), raw.catalog(),
                 new PluginManifest.PromptSpec("prompts/tarot.md", 9999, 0.7),
                 raw.data(), raw.variables(), raw.memory(), raw.quota(), raw.voice(),
-                raw.config(), raw.changelog());
+                raw.config(), raw.storage(), raw.schedules(), raw.changelog());
         FakeLlm llm = new FakeLlm();
         new PromptExecutor(llm, new EmptyMemories()).execute(pluginWith(m), "draw", Map.of(), 1L);
         assertEquals(1000, llm.seenMaxTokens);
@@ -182,7 +182,7 @@ class PromptExecutorTest {
                 raw.icon(), raw.readme(), raw.compat(), raw.intent(), raw.actions(),
                 raw.hosted(), raw.local(), raw.permissions(), raw.catalog(), raw.prompt(),
                 Map.of("deck", "../escape.json"), raw.variables(), raw.memory(), raw.quota(),
-                raw.voice(), raw.config(), raw.changelog());
+                raw.voice(), raw.config(), raw.storage(), raw.schedules(), raw.changelog());
         PromptExecutor executor = new PromptExecutor(new FakeLlm(), new EmptyMemories());
         DataExecutor.PluginException e = assertThrows(DataExecutor.PluginException.class,
                 () -> executor.execute(pluginWith(m), "draw", Map.of(), 1L));

@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 3,
+  "id": "menran.weekly",
+  "name": "每周周报",
+  "version": "1.0.0",
+  "apiVersion": 2,
+  "runtime": "prompt",
+  "description": "每周日给指定的人写一段本周回顾",
+  "author": { "name": "menran" },
+  "license": "MIT",
+  "tags": ["陪伴", "记忆", "周报"],
+  "compat": { "minHostVersion": "1.0.0" },
+  "intent": {
+    "id": "life.weekly",
+    "examples": ["写个周报", "这周怎么样", "帮我总结一下这周", "来份周报", "这周都聊了什么"]
+  },
+  "actions": [{
+    "name": "weekly",
+    "description": "生成本周周报",
+    "params": { "style": { "type": "string", "required": false } },
+    "returns": ["text"]
+  }],
+  "prompt": {
+    "system": "prompts/weekly.md",
+    "maxTokens": 500,
+    "temperature": 0.8
+  },
+  "variables": ["date", "profile", "memory_digest", "config.style"],
+  "config": [
+    {
+      "key": "targetUsers",
+      "label": "周报对象",
+      "type": "users",
+      "description": "选择要收到周报的人，可多选"
+    },
+    {
+      "key": "style",
+      "label": "口吻",
+      "type": "select",
+      "default": "温柔",
+      "options": [
+        { "value": "温柔", "label": "温柔" },
+        { "value": "俏皮", "label": "俏皮" },
+        { "value": "克制", "label": "克制" }
+      ]
+    },
+    {
+      "key": "enabled",
+      "label": "启用周报",
+      "type": "switch",
+      "default": true
+    }
+  ],
+  "storage": {
+    "version": 1,
+    "tables": [{
+      "name": "reports",
+      "label": "周报",
+      "retentionDays": 365,
+      "columns": [
+        { "name": "user_id", "type": "integer", "label": "对象", "index": true },
+        { "name": "period", "type": "text", "label": "周期" },
+        { "name": "content", "type": "text", "label": "内容", "ui": "longtext" },
+        { "name": "style", "type": "text", "label": "口吻" },
+        { "name": "created_at", "type": "text", "label": "生成时间", "ui": "datetime" }
+      ],
+      "indexes": [
+        { "columns": ["user_id", "period"], "unique": false }
+      ]
+    }]
+  },
+  "schedules": [{
+    "id": "weekly",
+    "cron": "0 0 21 * * 0",
+    "timezone": "Asia/Shanghai",
+    "target": "dm",
+    "scope": "config",
+    "recipientsKey": "targetUsers",
+    "action": "weekly",
+    "contentSource": "model",
+    "catchUp": "skip",
+    "graceMinutes": 10,
+    "save": {
+      "table": "reports",
+      "fields": {
+        "user_id": "$recipient",
+        "period": "$period",
+        "content": "$output",
+        "style": "$config.style",
+        "created_at": "$now"
+      }
+    }
+  }],
+  "permissions": {},
+  "quota": { "perUserPerDay": 3 }
+}

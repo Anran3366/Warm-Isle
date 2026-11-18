@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-11-18 10:20
+
+- 设备：dev-machine · macOS · user · DSH Agent
+- 变更：插件框架 v3（通用化）——
+  - 作者可在 manifest 声明 `config`（text/textarea/number/switch/select/user/users/time），后台自动渲染表单；
+  - 声明 `storage.tables`，宿主为每个插件建独立 SQLite（`data/plugin-data/<id>.db`），自动加 `bot_id`，提供行列表/详情/删除 API；
+  - 声明 `schedules`（cron、scope、recipientsKey、contentSource、save 映射），宿主 tick 执行，支持配置选人、生成后写表；
+  - prompt 变量新增 `memory_digest` 与 `config.<key>`；
+  - 周报插件 `menran.weekly` 上线：配置对象/口吻 → 周日 21:00 生成 → 私聊发送 → 写 `reports` 表 → 后台历史查看。
+- 影响：后端 / 前端 / 文档
+- 提交：本次
+
 ## 2026-11-17 16:01
 
 - 设备：dev-machine · macOS · user · DSH Agent
@@ -161,7 +173,7 @@
 - 设备：dev-machine · macOS · user · WorkBuddy Agent
 - 变更：加固开源脱敏脚本——排除登录二维码（`a.tar` 内的 `qr.png`、`sl-qr*.png`）与发布工具
   自身（其替换表含真实 IP / 域名的转义形式，此前会随快照进入公开仓）；补充主机名与登录用户名的
-  替换（`dev-machine`、`dev-machine`、`· user ·`、`· root ·`），自检规则同步扩充。
+  替换（`dev-machine`、`dev-machine`、`· dev-machine ·`、`· root ·`），自检规则同步扩充。
   起因：本次同步前人工检查发现 11-05 快照仍带二维码与主机名
 - 影响：部署 / 配置
 - 提交：见本次提交

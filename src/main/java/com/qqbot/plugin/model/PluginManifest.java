@@ -41,6 +41,8 @@ public record PluginManifest(
         Quota quota,
         VoiceSpec voice,
         List<ConfigField> config,
+        StorageSpec storage,
+        List<ScheduleSpec> schedules,
         String changelog) {
 
     @JsonIgnore
@@ -253,5 +255,61 @@ public record PluginManifest(
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ConfigOption(String value, String label) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record StorageSpec(Integer version, List<TableSpec> tables) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record TableSpec(String name, String label, Integer retentionDays,
+                            List<ColumnSpec> columns, List<IndexSpec> indexes) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ColumnSpec(String name, String type, Boolean primaryKey, Boolean autoIncrement,
+                             Boolean notNull, Boolean index, Boolean unique,
+                             String label, String ui,
+                             @JsonProperty("default") Object defaultValue) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record IndexSpec(List<String> columns, Boolean unique) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ScheduleSpec(String id, String cron, String timezone, String target,
+                               String scope, String recipientsKey, String action,
+                               String contentSource, String template, String catchUp,
+                               Integer graceMinutes, Boolean enabled, SaveSpec save) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record SaveSpec(String table, Map<String, String> fields) {
+    }
+
+    @JsonIgnore
+    public List<TableSpec> tables() {
+        return storage == null || storage.tables() == null ? List.of() : storage.tables();
+    }
+
+    @JsonIgnore
+    public TableSpec table(String name) {
+        for (TableSpec t : tables()) {
+            if (t != null && name != null && name.equals(t.name())) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    @JsonIgnore
+    public List<ScheduleSpec> schedulesOrEmpty() {
+        return schedules == null ? List.of() : schedules;
+    }
+
+    @JsonIgnore
+    public List<ConfigField> configFieldsOrEmpty() {
+        return config == null ? List.of() : config;
     }
 }

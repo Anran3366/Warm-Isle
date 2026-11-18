@@ -3,8 +3,11 @@ package com.qqbot.plugin.exec;
 import com.qqbot.llm.BudgetExceededException;
 import com.qqbot.llm.DeepSeekClient;
 import com.qqbot.llm.LlmResult;
+import com.qqbot.bot.BotContext;
 import com.qqbot.memory.Memory;
 import com.qqbot.memory.MemoryStore;
+import com.qqbot.memory.evolve.MemoryDigestService;
+import com.qqbot.plugin.data.PluginConfigService;
 import com.qqbot.plugin.model.PluginManifest;
 import com.qqbot.plugin.registry.InstalledPlugin;
 import org.slf4j.Logger;
@@ -43,7 +46,7 @@ public class PromptExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(PromptExecutor.class);
 
-    private static final Pattern VAR = Pattern.compile("\\{(\\w+)}");
+    private static final Pattern VAR = Pattern.compile("\\{([\\w.]+)}");
     private static final long MAX_TEMPLATE_BYTES = 16 * 1024;
     private static final long MAX_DATA_BYTES = 64 * 1024;
     private static final int MAX_TOKENS_CAP = 1000;
@@ -59,6 +62,12 @@ public class PromptExecutor {
 
     private final DeepSeekClient llm;
     private final MemoryStore memories;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MemoryDigestService digestService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private PluginConfigService configService;
 
     public PromptExecutor(DeepSeekClient llm, MemoryStore memories) {
         this.llm = llm;
@@ -77,6 +86,31 @@ public class PromptExecutor {
         Map<String, String> vars = new LinkedHashMap<>();
         vars.put("date", LocalDate.now().format(DAY));
         vars.put("profile", profileOf(qqId));
+        List<String> variables = manifest.variables() == null ? List.of() : manifest.variables();
+        if (variables.contains("memory_digest") && digestService != null) {
+            try {
+                vars.put("memory_digest", digestService.digest(qqId));
+            } catch (Exception e) {
+                vars.put("memory_digest", "");
+            }
+        }
+        if (configService != null && !manifest.configFieldsOrEmpty().isEmpty()) {
+            try {
+                Map<String, Object> config = configService.read(plugin);
+                for (PluginManifest.ConfigField f : manifest.configFieldsOrEmpty()) {
+                    if (f == null || f.key() == null || !variables.contains("config." + f.key())) {
+                        continue;
+                    }
+                    Object value = config.get(f.key());
+                    String text = value instanceof List<?> list
+                            ? String.join("、", list.stream().map(String::valueOf).toList())
+                            : String.valueOf(value == null ? "" : value);
+                    vars.put("config." + f.key(), text);
+                }
+            } catch (Exception e) {
+                log.debug("插件配置变量读取失败: {}", e.getMessage());
+            }
+        }
         // action 声明过的参数先占位空串：可选参数用户没给时模板照常渲染
         PluginManifest.Action action = manifest.action(actionName);
         if (action != null && action.params() != null) {

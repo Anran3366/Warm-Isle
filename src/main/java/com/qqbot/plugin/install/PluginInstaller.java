@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qqbot.memory.Db;
 import com.qqbot.memory.SharedDb;
 import com.qqbot.plugin.PluginProperties;
+import com.qqbot.plugin.data.PluginDataStore;
+import com.qqbot.plugin.registry.InstalledPlugin;
 import com.qqbot.plugin.manifest.ManifestParser;
 import com.qqbot.plugin.model.ManifestIssue;
 import com.qqbot.plugin.model.PluginManifest;
@@ -44,13 +46,17 @@ public class PluginInstaller {
     private final Db db;
     private final ObjectMapper mapper;
 
+    private final PluginDataStore dataStore;
+
     public PluginInstaller(PluginRegistry registry, PluginProperties props,
-                           SharedDb shared, Db db, ObjectMapper mapper) {
+                           SharedDb shared, Db db, ObjectMapper mapper,
+                           PluginDataStore dataStore) {
         this.registry = registry;
         this.props = props;
         this.shared = shared;
         this.db = db;
         this.mapper = mapper;
+        this.dataStore = dataStore;
     }
 
     public record InstallResult(boolean ok, String pluginId, String version,
@@ -131,6 +137,10 @@ public class PluginInstaller {
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
             boolean upgraded = upsertRow(m, sha256(zip), source);
             registry.reload();
+            InstalledPlugin installed = registry.find(m.id());
+            if (installed != null) {
+                dataStore.ensureSchema(installed);
+            }
             if (upgraded) {
                 // 升级后权限有变就先停掉，等用户在后台重新确认（文档 §7.4 / §7.7）
                 int paused = suspendIfPermissionsChanged(m);

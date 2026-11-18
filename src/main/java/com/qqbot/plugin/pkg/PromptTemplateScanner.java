@@ -33,7 +33,7 @@ import java.util.regex.Pattern;
 public final class PromptTemplateScanner {
 
     private static final long MAX_TEMPLATE_BYTES = 16 * 1024;
-    private static final Pattern VAR_NAME = Pattern.compile("^[a-z][a-z0-9_]{0,30}$");
+    private static final Pattern VAR_NAME = Pattern.compile("^[a-z][a-z0-9_]{0,30}$|^config\\.[a-zA-Z][a-zA-Z0-9_]{0,30}$");
 
     /** 注入关键词（小写比对）：中英常见越狱话术 + system 冒充 + 密钥探针 */
     private static final List<String> INJECTION_KEYWORDS = List.of(

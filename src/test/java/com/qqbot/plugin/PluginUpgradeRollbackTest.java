@@ -57,7 +57,7 @@ class PluginUpgradeRollbackTest {
 
         registry = new PluginRegistry(shared, db, globalDb, props, mapper);
         registry.init();
-        installer = new PluginInstaller(registry, props, shared, db, mapper);
+        installer = new PluginInstaller(registry, props, shared, db, mapper, new com.qqbot.plugin.data.PluginDataStore(props));
     }
 
     @Test
