@@ -22,6 +22,10 @@ class DeepSeekImportPluginTest {
         List<ManifestIssue> errors = r.issues().stream().filter(ManifestIssue::isError).toList();
         assertTrue(r.ok(), "导入插件 manifest 校验失败: " + errors);
         assertTrue(r.manifest().importsOrEmpty().get(0).perUser());
+        Path dir = Path.of("packs/menran.deepseek-import");
+        var scan = com.qqbot.plugin.pkg.PromptTemplateScanner.scan(r.manifest(), dir);
+        scan.addAll(com.qqbot.plugin.pkg.PromptTemplateScanner.scanImports(r.manifest(), dir));
+        assertTrue(scan.isEmpty(), "导入插件 prompt 扫描失败: " + scan);
 
         String sample = """
                 {
