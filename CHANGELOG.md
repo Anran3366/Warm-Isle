@@ -23,7 +23,8 @@
   - 声明 `storage.tables`，宿主为每个插件建独立 SQLite（`data/plugin-data/<id>.db`），自动加 `bot_id`，提供行列表/详情/删除 API；
   - 声明 `schedules`（cron、scope、recipientsKey、contentSource、save 映射），宿主 tick 执行，支持配置选人、生成后写表；
   - prompt 变量新增 `memory_digest` 与 `config.<key>`；
-  - 周报插件 `menran.weekly` 上线：配置对象/口吻 → 周日 21:00 生成 → 私聊发送 → 写 `reports` 表 → 后台历史查看。
+  - 周报插件 `menran.weekly` 上线：配置对象/口吻 → 周日 21:00 生成 → 私聊发送 → 写 `reports` 表 → 后台历史查看；
+  - 插件列表「配置」改为独立弹窗（之前只是打开详情并滚到只读区，入口不直观）。
 - 影响：后端 / 前端 / 文档
 - 提交：本次
 

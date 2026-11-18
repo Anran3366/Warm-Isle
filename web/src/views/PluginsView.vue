@@ -165,7 +165,7 @@
         <el-table-column label="操作" width="200" align="right">
           <template #default="{ row }">
             <el-button v-if="storeUpgrade(row)" text type="warning" @click="openStorePreview(storeUpgrade(row)!)">升级</el-button>
-            <el-button text type="primary" @click="openDetail(row, true)">配置</el-button>
+            <el-button text type="primary" @click="openConfig(row)">配置</el-button>
             <el-button text type="danger" @click="uninstall(row)">卸载</el-button>
           </template>
         </el-table-column>
@@ -739,6 +739,84 @@
 
         </template>
       </div>
+      <el-dialog v-model="configDialogVisible" title="插件配置" width="580px">
+        <div v-if="configLoading" class="muted">读取配置中…</div>
+        <div v-else-if="!configFields.length" class="muted">这个插件没有声明可配置项。</div>
+        <div v-else class="plugin-config-form">
+          <div v-for="f in configFields" :key="f.key" class="config-row">
+            <label>{{ f.label || f.key }}</label>
+            <div class="config-control">
+              <el-select
+                v-if="f.type === 'users'"
+                v-model="configValues[f.key]"
+                multiple
+                filterable
+                collapse-tags
+                placeholder="选择聊过天的人"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="u in pluginUsers"
+                  :key="u.qqId"
+                  :label="`${u.name}（${u.qqId}）`"
+                  :value="Number(u.qqId)"
+                />
+              </el-select>
+              <el-select
+                v-else-if="f.type === 'user'"
+                v-model="configValues[f.key]"
+                filterable
+                placeholder="选择聊过天的人"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="u in pluginUsers"
+                  :key="u.qqId"
+                  :label="`${u.name}（${u.qqId}）`"
+                  :value="Number(u.qqId)"
+                />
+              </el-select>
+              <el-select
+                v-else-if="f.type === 'select'"
+                v-model="configValues[f.key]"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="o in (f.options || [])"
+                  :key="o.value"
+                  :label="o.label || o.value"
+                  :value="o.value"
+                />
+              </el-select>
+              <el-switch v-else-if="f.type === 'switch'" v-model="configValues[f.key]" />
+              <el-input-number
+                v-else-if="f.type === 'number'"
+                v-model="configValues[f.key]"
+                :min="f.min ?? undefined"
+                :max="f.max ?? undefined"
+              />
+              <el-input
+                v-else-if="f.type === 'textarea'"
+                v-model="configValues[f.key]"
+                type="textarea"
+                :rows="3"
+              />
+              <el-input v-else v-model="configValues[f.key]" />
+              <div v-if="f.description" class="muted">{{ f.description }}</div>
+            </div>
+          </div>
+        </div>
+        <template #footer>
+          <el-button @click="configDialogVisible = false">取消</el-button>
+          <el-button
+            v-if="configFields.length"
+            type="primary"
+            :loading="configSaving"
+            @click="savePluginConfig"
+          >保存配置</el-button>
+        </template>
+      </el-dialog>
+
       <el-dialog v-model="recordVisible" title="记录详情" width="620px">
         <div class="record-content">{{ recordContent }}</div>
       </el-dialog>
@@ -1140,6 +1218,8 @@ const examples = computed<string[]>(() => detail.value?.manifest?.intent?.exampl
 const actions = computed<any[]>(() => detail.value?.manifest?.actions || [])
 const catalogEntries = computed<any[]>(() => detail.value?.manifest?.catalog?.entries || [])
 const configFields = computed<any[]>(() => detail.value?.manifest?.config || [])
+const configDialogVisible = ref(false)
+const configLoading = ref(false)
 const configValues = ref<Record<string, any>>({})
 const pluginUsers = ref<any[]>([])
 const configSaving = ref(false)
@@ -1157,6 +1237,23 @@ const runningSchedule = ref(false)
 
 const displayColumns = computed<any[]>(() =>
   tableColumns.value.filter((c: any) => c.name !== 'bot_id' && c.name !== 'id'))
+
+async function openConfig(row: any) {
+  configDialogVisible.value = true
+  configLoading.value = true
+  try {
+    const id = encodeURIComponent(row.id)
+    detail.value = await call<any>(`/api/plugins/${id}`)
+    const r = await call<any>(`/api/plugins/${id}/config`)
+    configValues.value = r.values || {}
+    pluginUsers.value = await call<any[]>('/api/memories/graph/users')
+  } catch (e: any) {
+    configDialogVisible.value = false
+    ElMessage.error(e.message || '读取配置失败')
+  } finally {
+    configLoading.value = false
+  }
+}
 
 async function loadPluginExtras() {
   const id = detail.value?.id
@@ -1206,6 +1303,7 @@ async function savePluginConfig() {
       body: JSON.stringify(configValues.value),
     })
     ElMessage.success('配置已保存')
+    configDialogVisible.value = false
   } catch (e: any) {
     ElMessage.error(e.message || '保存失败')
   } finally {
