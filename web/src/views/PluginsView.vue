@@ -593,6 +593,42 @@
               </div>
             </template>
 
+            <div v-if="(detail.manifest?.imports || []).length" ref="importSection">
+              <h5 class="sub-head">导入记录（{{ importRecords.length }}）</h5>
+              <div class="import-head">
+                <span class="muted">上传聊天记录，审核后只对指定 QQ 生效</span>
+                <el-button size="small" type="primary" @click="openImportDialog">+ 新增记录</el-button>
+              </div>
+              <el-empty v-if="!importRecords.length" description="还没有导入记录" :image-size="60" />
+              <el-table v-else :data="importRecords" size="small" border>
+                <el-table-column label="QQ" min-width="120">
+                  <template #default="{ row }">{{ importUserName(row.targetQq) }}</template>
+                </el-table-column>
+                <el-table-column prop="title" label="来源" min-width="110" show-overflow-tooltip />
+                <el-table-column label="消息数" width="70" prop="messageCount" />
+                <el-table-column label="人设" min-width="100">
+                  <template #default="{ row }">{{ row.personaName || '未检测到' }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }">
+                    <el-tag size="small" :type="row.status === 'applied' ? 'success' : 'info'">
+                      {{ importStatusText(row.status) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="启用" width="70">
+                  <template #default="{ row }">
+                    <el-switch
+                      :model-value="row.enabled"
+                      :disabled="!row.personaId"
+                      @change="toggleImport(row)"
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column prop="createdAt" label="时间" width="140" />
+              </el-table>
+            </div>
+
             <template v-if="assetsRows.length">
               <h5 class="sub-head">包内素材（{{ assetsRows.length }}）</h5>
               <el-table :data="assetsRows" size="small" border>
@@ -814,6 +850,93 @@
             :loading="configSaving"
             @click="savePluginConfig"
           >保存配置</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog v-model="importDialogVisible" title="新增导入记录" width="700px">
+        <div v-if="!importPreview" class="import-upload">
+          <div class="config-row">
+            <label>导入给</label>
+            <div class="config-control">
+              <el-select v-model="importQq" filterable placeholder="选择 QQ" style="width: 100%">
+                <el-option
+                  v-for="u in pluginUsers"
+                  :key="u.qqId"
+                  :label="`${u.name}（${u.qqId}）`"
+                  :value="Number(u.qqId)"
+                />
+              </el-select>
+            </div>
+          </div>
+          <div
+            class="import-drop"
+            @dragover.prevent
+            @drop.prevent="onImportDrop"
+          >
+            <div v-if="importFile">{{ importFile.name }}</div>
+            <div v-else class="muted">拖入或选择导出文件（JSON / Markdown / TXT / HTML / ZIP）</div>
+            <input type="file" accept=".json,.md,.markdown,.txt,.html,.htm,.zip" @change="onImportFile" />
+          </div>
+          <p class="detail-note">
+            只读取上传文件，不登录 DeepSeek。普通聊天不会强行生成人设。
+          </p>
+        </div>
+        <div v-else class="import-preview">
+          <el-descriptions :column="2" size="small" border>
+            <el-descriptions-item label="类型">
+              {{ importPreview.conversationType === 'roleplay' ? '角色扮演'
+                : importPreview.conversationType === 'mixed' ? '混合' : '普通聊天' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="人设">
+              {{ importPreview.persona?.detected
+                ? `${importPreview.persona.name || '未命名'}（${Math.round((importPreview.persona.confidence || 0) * 100)}%）`
+                : '未检测到' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="重要信息">{{ (importPreview.facts || []).length }} 条</el-descriptions-item>
+            <el-descriptions-item label="沟通偏好">{{ (importPreview.styles || []).length }} 条</el-descriptions-item>
+          </el-descriptions>
+
+          <div v-if="importPreview.persona?.detected" class="import-block">
+            <h5>人设预览</h5>
+            <div v-for="(v, k) in (importPreview.persona.sections || {})" :key="k" class="import-section">
+              <b>【{{ k }}】</b>
+              <span>{{ v }}</span>
+            </div>
+            <el-checkbox v-model="importApplyPersona">应用这个人设</el-checkbox>
+            <el-checkbox v-model="importEnablePersona">立即对 {{ importQq }} 开启</el-checkbox>
+          </div>
+
+          <div class="import-block">
+            <h5>重要信息</h5>
+            <el-checkbox v-model="importApplyFacts">写入记忆库</el-checkbox>
+            <div class="import-facts">
+              <el-checkbox
+                v-for="(f, i) in (importPreview.facts || [])"
+                :key="i"
+                :model-value="importSelectedFacts.includes(i)"
+                @change="toggleImportFact(i)"
+              >
+                <b>{{ f.key }}</b>：{{ f.value }}
+                <span class="muted">（{{ f.category }}）</span>
+              </el-checkbox>
+            </div>
+          </div>
+
+          <el-alert
+            v-if="(importPreview.warnings || []).length"
+            type="warning"
+            :closable="false"
+            :title="(importPreview.warnings || []).join('；')"
+          />
+        </div>
+        <template #footer>
+          <el-button @click="importDialogVisible = false">取消</el-button>
+          <el-button v-if="!importPreview" type="primary" :loading="importLoading" @click="uploadImport">
+            上传并解析
+          </el-button>
+          <el-button v-else type="primary" :loading="importLoading" @click="applyImport">
+            确认导入
+          </el-button>
         </template>
       </el-dialog>
 
@@ -1220,6 +1343,7 @@ const catalogEntries = computed<any[]>(() => detail.value?.manifest?.catalog?.en
 const configFields = computed<any[]>(() => detail.value?.manifest?.config || [])
 const configDialogVisible = ref(false)
 const configLoading = ref(false)
+const importSection = ref<HTMLElement | null>(null)
 const configValues = ref<Record<string, any>>({})
 const pluginUsers = ref<any[]>([])
 const configSaving = ref(false)
@@ -1231,6 +1355,17 @@ const tableTotal = ref(0)
 const recordVisible = ref(false)
 const recordContent = ref('')
 const schedules = ref<any[]>([])
+const importRecords = ref<any[]>([])
+const importDialogVisible = ref(false)
+const importLoading = ref(false)
+const importQq = ref<number | null>(null)
+const importFile = ref<File | null>(null)
+const importPreview = ref<any>(null)
+const importCurrentId = ref(0)
+const importApplyFacts = ref(true)
+const importApplyPersona = ref(true)
+const importEnablePersona = ref(true)
+const importSelectedFacts = ref<number[]>([])
 const runVisible = ref(false)
 const runText = ref('')
 const runningSchedule = ref(false)
@@ -1247,6 +1382,14 @@ async function openConfig(row: any) {
     const r = await call<any>(`/api/plugins/${id}/config`)
     configValues.value = r.values || {}
     pluginUsers.value = await call<any[]>('/api/memories/graph/users')
+    if (!configFields.value.length && (detail.value?.manifest?.imports || []).length) {
+      configDialogVisible.value = false
+      await openDetail(row)
+      await nextTick()
+      window.setTimeout(() => {
+        importSection.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+      }, 150)
+    }
   } catch (e: any) {
     configDialogVisible.value = false
     ElMessage.error(e.message || '读取配置失败')
@@ -1261,10 +1404,13 @@ async function loadPluginExtras() {
   configValues.value = {}
   dataTables.value = []
   schedules.value = []
-  if (configFields.value.length) {
+  const hasImports = (detail.value?.manifest?.imports || []).length > 0
+  if (configFields.value.length || hasImports) {
     try {
-      const r = await call<any>(`/api/plugins/${encodeURIComponent(id)}/config`)
-      configValues.value = r.values || {}
+      if (configFields.value.length) {
+        const r = await call<any>(`/api/plugins/${encodeURIComponent(id)}/config`)
+        configValues.value = r.values || {}
+      }
       pluginUsers.value = await call<any[]>('/api/memories/graph/users')
     } catch { /* 配置读取失败不阻塞详情 */ }
   }
@@ -1280,6 +1426,120 @@ async function loadPluginExtras() {
     const s = await call<any>(`/api/plugins/${encodeURIComponent(id)}/schedules`)
     schedules.value = s.items || []
   } catch { /* 没有定时也正常 */ }
+  if (hasImports) {
+    await loadImports()
+  }
+}
+
+async function loadImports() {
+  const id = detail.value?.id
+  if (!id) return
+  try {
+    const r = await call<any>(`/api/plugins/${encodeURIComponent(id)}/imports`)
+    importRecords.value = r.items || []
+  } catch { importRecords.value = [] }
+}
+
+function openImportDialog() {
+  const targets = configValues.value.targetUsers
+  const first = Array.isArray(targets) && targets.length ? Number(targets[0]) : 0
+  importQq.value = first || (pluginUsers.value.length ? Number(pluginUsers.value[0].qqId) : null)
+  importFile.value = null
+  importPreview.value = null
+  importCurrentId.value = 0
+  importApplyFacts.value = true
+  importApplyPersona.value = true
+  importEnablePersona.value = true
+  importSelectedFacts.value = []
+  importDialogVisible.value = true
+}
+
+function onImportFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  importFile.value = input.files?.[0] || null
+  input.value = ''
+}
+
+function onImportDrop(e: DragEvent) {
+  importFile.value = e.dataTransfer?.files?.[0] || null
+}
+
+async function uploadImport() {
+  const id = detail.value?.id
+  if (!id || !importQq.value || !importFile.value) {
+    ElMessage.warning('先选 QQ 和文件')
+    return
+  }
+  importLoading.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    const r = await call<any>(
+      `/api/plugins/${encodeURIComponent(id)}/imports?qqId=${importQq.value}`,
+      { method: 'POST', body: fd })
+    if (!r.ok) throw new Error(r.message || '解析失败')
+    importCurrentId.value = r.result.importId
+    importPreview.value = r.result.preview
+    importSelectedFacts.value = (r.result.preview.facts || []).map((_: any, i: number) => i)
+    importApplyPersona.value = !!r.result.preview.persona?.detected
+    importEnablePersona.value = !!r.result.preview.persona?.detected
+    ElMessage.success('解析完成，请确认')
+  } catch (e: any) {
+    ElMessage.error(e.message || '上传失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
+function toggleImportFact(i: number) {
+  const set = new Set(importSelectedFacts.value)
+  if (set.has(i)) set.delete(i)
+  else set.add(i)
+  importSelectedFacts.value = Array.from(set)
+}
+
+async function applyImport() {
+  const id = detail.value?.id
+  if (!id || !importCurrentId.value) return
+  importLoading.value = true
+  try {
+    const personaDetected = !!importPreview.value?.persona?.detected
+    const r = await call<any>(
+      `/api/plugins/${encodeURIComponent(id)}/imports/${importCurrentId.value}/apply`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          applyFacts: importApplyFacts.value,
+          applyPersona: importApplyPersona.value && personaDetected,
+          enablePersona: importEnablePersona.value && personaDetected,
+          factIndexes: importSelectedFacts.value,
+        }),
+      })
+    if (!r.ok) throw new Error(r.message || '应用失败')
+    ElMessage.success('已写入')
+    importDialogVisible.value = false
+    await loadImports()
+  } catch (e: any) {
+    ElMessage.error(e.message || '应用失败')
+  } finally {
+    importLoading.value = false
+  }
+}
+
+async function toggleImport(row: any) {
+  const id = detail.value?.id
+  if (!id) return
+  try {
+    const r = await call<any>(
+      `/api/plugins/${encodeURIComponent(id)}/imports/${row.id}/enable?enabled=${!row.enabled}`,
+      { method: 'POST' })
+    if (!r.ok) throw new Error(r.message || '操作失败')
+    ElMessage.success(row.enabled ? '已关闭' : '已开启')
+    await loadImports()
+  } catch (e: any) {
+    ElMessage.error(e.message || '操作失败')
+  }
 }
 
 async function loadRows() {
@@ -1320,6 +1580,18 @@ function cell(row: any, col: any): string {
   }
   const text = String(value)
   return col.ui === 'longtext' && text.length > 60 ? text.slice(0, 60) + '…' : text
+}
+
+function importUserName(qq: any): string {
+  const u = pluginUsers.value.find((x: any) => String(x.qqId) === String(qq))
+  return u ? `${u.name}（${qq}）` : String(qq)
+}
+
+function importStatusText(status: string): string {
+  const map: Record<string, string> = {
+    parsing: '解析中', extracting: '提取中', review: '待确认', applied: '已应用', failed: '失败',
+  }
+  return map[status] || status || '-'
 }
 
 function openRecord(row: any) {
@@ -2024,4 +2296,11 @@ onMounted(() => {
 .config-control { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .schedule-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px dashed var(--el-border-color-light); }
 .record-content { white-space: pre-wrap; line-height: 1.7; max-height: 55vh; overflow: auto; }
+.import-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.import-upload { display: flex; flex-direction: column; gap: 12px; }
+.import-drop { border: 1px dashed var(--el-border-color); border-radius: 8px; padding: 20px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.import-preview { display: flex; flex-direction: column; gap: 12px; max-height: 60vh; overflow: auto; }
+.import-block h5 { margin: 8px 0; }
+.import-section { font-size: 13px; line-height: 1.6; margin-bottom: 4px; }
+.import-facts { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow: auto; margin-top: 4px; }
 </style>

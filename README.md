@@ -58,7 +58,8 @@
 - **插件商店**：插件是包（`data` / `prompt` / `hosted` / `local` 四类），装完即用；
   意图路由在合适时机触发、短句直接执行不调模型，做完的事写进记忆；
   v3 支持作者声明 `config`（后台自动表单）、`storage.tables`（每插件独立 SQLite + 自动建表）、
-  `schedules`（定时任务 + 生成后按映射存档）；周报插件即用这套能力；
+  `schedules`（定时任务 + 生成后按映射存档）；v4 增加 `imports`（上传聊天记录、提取人设/世界观/重要信息），
+  导入插件只写 manifest + prompt；周报插件即用 v3 能力，DeepSeek 导入插件用 v4；
   后台可浏览商店、预览安装、按账号启停、升级回滚；商店服务端独立部署，运行期不回连
 - **多账号**：每个机器人号独立协议端容器（NapCat 或 SnowLuma）、独立数据库，后台可扫码登录/下线
 - **话题屏蔽**：命中不走模型，支持拒绝/转移/静默
@@ -85,7 +86,8 @@
 
 入口：后台左侧 **记忆 → 记忆星图 → 记忆进化**，或直接访问 `/#/memory/evolve`。
 
-插件框架 v3 说明见 [docs/plugin-framework-v3.md](docs/plugin-framework-v3.md)。
+插件框架 v3 说明见 [docs/plugin-framework-v3.md](docs/plugin-framework-v3.md)；
+导入能力与按 QQ 人设见 [docs/plugin-imports.md](docs/plugin-imports.md)。
 
 ## 架构
 

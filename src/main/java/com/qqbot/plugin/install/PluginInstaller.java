@@ -121,6 +121,9 @@ public class PluginInstaller {
             if (m.usesPrompt()) {
                 // 安装时静态扫描：注入话术 / 未声明的占位符 / 模板大小编码（§10.6）
                 List<ManifestIssue> scan = com.qqbot.plugin.pkg.PromptTemplateScanner.scan(m, tmp);
+                if (m.imports() != null && !m.imports().isEmpty()) {
+                    scan.addAll(com.qqbot.plugin.pkg.PromptTemplateScanner.scanImports(m, tmp));
+                }
                 if (!scan.isEmpty()) {
                     issues.addAll(scan);
                     deleteQuietly(tmp);

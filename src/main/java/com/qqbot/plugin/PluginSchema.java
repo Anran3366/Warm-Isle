@@ -110,6 +110,45 @@ public final class PluginSchema {
             """,
             "CREATE INDEX IF NOT EXISTS idx_plugin_schedule_due ON plugin_schedule_runs(plugin_id, occurrence)",
             """
+            CREATE TABLE IF NOT EXISTS plugin_imports (
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              plugin_id     TEXT NOT NULL,
+              target_qq     INTEGER NOT NULL,
+              source        TEXT NOT NULL DEFAULT 'upload',
+              title         TEXT,
+              file_name     TEXT,
+              message_count INTEGER NOT NULL DEFAULT 0,
+              status        TEXT NOT NULL DEFAULT 'parsing',
+              error         TEXT,
+              persona_id    INTEGER,
+              enabled       INTEGER NOT NULL DEFAULT 0,
+              created_at    TEXT NOT NULL,
+              updated_at    TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_plugin_imports_qq ON plugin_imports(plugin_id, target_qq, id)",
+            """
+            CREATE TABLE IF NOT EXISTS plugin_import_candidates (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              import_id   INTEGER NOT NULL,
+              kind        TEXT NOT NULL,
+              payload     TEXT NOT NULL,
+              confidence  REAL NOT NULL DEFAULT 0,
+              status      TEXT NOT NULL DEFAULT 'pending',
+              created_at  TEXT NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_plugin_import_candidates_import ON plugin_import_candidates(import_id)",
+            """
+            CREATE TABLE IF NOT EXISTS plugin_import_apply_log (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              import_id   INTEGER NOT NULL,
+              persona_id  INTEGER,
+              fact_count  INTEGER NOT NULL DEFAULT 0,
+              created_at  TEXT NOT NULL
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS plugin_proposals (
               id          INTEGER PRIMARY KEY AUTOINCREMENT,
               plugin_id   TEXT NOT NULL,

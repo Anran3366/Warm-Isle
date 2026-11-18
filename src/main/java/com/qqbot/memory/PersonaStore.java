@@ -20,11 +20,13 @@ public class PersonaStore {
     private static final String ACTIVE_KEY = "persona.activeId";
 
     private final SharedDb db;
+    private final Db botDb;
     private final SettingStore settings;
     private final BotProperties props;
 
-    public PersonaStore(SharedDb db, SettingStore settings, BotProperties props) {
+    public PersonaStore(SharedDb db, Db botDb, SettingStore settings, BotProperties props) {
         this.db = db;
+        this.botDb = botDb;
         this.settings = settings;
         this.props = props;
     }
@@ -59,6 +61,106 @@ public class PersonaStore {
             // 返回空列表
         }
         return list;
+    }
+
+    /** 按 QQ 解析：优先该用户绑定的人设，其次当前账号全局人设。 */
+    public Persona activeFor(long qqId) {
+        Long botId = com.qqbot.bot.BotContext.get();
+        if (botId != null) {
+            Persona bound = binding(botId, qqId);
+            if (bound != null) {
+                return bound;
+            }
+        }
+        return active();
+    }
+
+    public Persona binding(long botId, long qqId) {
+        String sql = "SELECT persona_id, source_plugin FROM persona_bindings "
+                + "WHERE bot_id=? AND qq_id=? AND enabled=1";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, botId);
+            ps.setLong(2, qqId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return null;
+                }
+                String source = rs.getString(2);
+                if (source != null && !source.isBlank() && !pluginEnabled(source)) {
+                    return null;
+                }
+                Persona p = byId(rs.getLong(1));
+                return p == null ? null : new Persona(p.id(), p.name(), p.content(), true);
+            }
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** 插件停用后，它绑定的用户人设自动失效；重新启用后自动恢复。 */
+    private boolean pluginEnabled(String pluginId) {
+        Long botId = com.qqbot.bot.BotContext.get();
+        if (botId == null) {
+            return true;
+        }
+        try (Connection c = botDb.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "SELECT enabled FROM plugin_state WHERE plugin_id=?")) {
+            ps.setString(1, pluginId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() && rs.getInt(1) == 1;
+            }
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 给指定账号下的指定 QQ 绑定人设；一个 QQ 只保留一条绑定。 */
+    public void bind(long botId, long qqId, long personaId, String sourcePlugin) {
+        String now = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        String sql = "INSERT INTO persona_bindings(bot_id, qq_id, persona_id, enabled, "
+                + "source_plugin, created_at, updated_at) VALUES(?,?,?,1,?,?,?) "
+                + "ON CONFLICT(bot_id, qq_id) DO UPDATE SET persona_id=excluded.persona_id, "
+                + "enabled=1, source_plugin=excluded.source_plugin, updated_at=excluded.updated_at";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, botId);
+            ps.setLong(2, qqId);
+            ps.setLong(3, personaId);
+            ps.setString(4, sourcePlugin);
+            ps.setString(5, now);
+            ps.setString(6, now);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new IllegalStateException("绑定人设失败: " + e.getMessage(), e);
+        }
+    }
+
+    public void setBindingEnabled(long botId, long qqId, boolean enabled) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE persona_bindings SET enabled=?, updated_at=? WHERE bot_id=? AND qq_id=?")) {
+            ps.setInt(1, enabled ? 1 : 0);
+            ps.setString(2, java.time.LocalDateTime.now()
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+            ps.setLong(3, botId);
+            ps.setLong(4, qqId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new IllegalStateException("切换人设绑定失败: " + e.getMessage(), e);
+        }
+    }
+
+    public void unbind(long botId, long qqId) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "DELETE FROM persona_bindings WHERE bot_id=? AND qq_id=?")) {
+            ps.setLong(1, botId);
+            ps.setLong(2, qqId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            throw new IllegalStateException("解绑人设失败: " + e.getMessage(), e);
+        }
     }
 
     public Persona active() {

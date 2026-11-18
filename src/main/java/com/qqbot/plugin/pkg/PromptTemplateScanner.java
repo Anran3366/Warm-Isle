@@ -49,6 +49,44 @@ public final class PromptTemplateScanner {
     private PromptTemplateScanner() {
     }
 
+    /** 扫 imports 的提取 prompt：只查大小、编码和注入关键词，不查变量占位符。 */
+    public static List<ManifestIssue> scanImports(PluginManifest m, Path pluginDir) {
+        List<ManifestIssue> issues = new ArrayList<>();
+        if (m == null || m.imports() == null) {
+            return issues;
+        }
+        for (PluginManifest.ImportSpec spec : m.imports()) {
+            if (spec == null || spec.prompt() == null || spec.prompt().isBlank()) {
+                continue;
+            }
+            Path file = pluginDir.resolve(spec.prompt()).normalize();
+            if (!file.startsWith(pluginDir) || !Files.isRegularFile(file)) {
+                issues.add(ManifestIssue.of("imports." + spec.id() + ".prompt",
+                        "IMPORT_TEMPLATE_NOT_FOUND", "导入 prompt 不存在: " + spec.prompt()));
+                continue;
+            }
+            try {
+                if (Files.size(file) > MAX_TEMPLATE_BYTES) {
+                    issues.add(ManifestIssue.of("imports." + spec.id() + ".prompt",
+                            "IMPORT_TEMPLATE_TOO_LARGE", "导入 prompt 不能超过 16KB"));
+                    continue;
+                }
+                String text = Files.readString(file, StandardCharsets.UTF_8);
+                String lower = text.toLowerCase(Locale.ROOT);
+                for (String keyword : INJECTION_KEYWORDS) {
+                    if (lower.contains(keyword)) {
+                        issues.add(ManifestIssue.of("imports." + spec.id() + ".prompt",
+                                "PROMPT_INJECTION", "导入 prompt 包含疑似注入话术: 「" + keyword + "」"));
+                    }
+                }
+            } catch (IOException e) {
+                issues.add(ManifestIssue.of("imports." + spec.id() + ".prompt",
+                        "IMPORT_TEMPLATE_UNREADABLE", "导入 prompt 读取失败: " + e.getMessage()));
+            }
+        }
+        return issues;
+    }
+
     /**
      * 扫一个已解压的插件目录（prompt 型才需要调）。
      *

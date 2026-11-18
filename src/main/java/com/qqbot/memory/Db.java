@@ -171,6 +171,19 @@ public class Db {
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS persona_bindings (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              bot_id INTEGER NOT NULL,
+              qq_id INTEGER NOT NULL,
+              persona_id INTEGER NOT NULL,
+              enabled INTEGER NOT NULL DEFAULT 1,
+              source_plugin TEXT,
+              created_at TEXT,
+              updated_at TEXT,
+              UNIQUE(bot_id, qq_id)
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS login_qr (
               token TEXT PRIMARY KEY,
               status TEXT NOT NULL DEFAULT 'pending',

@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-11-18 17:40
+
+- 设备：dev-machine · macOS · user · DSH Agent
+- 变更：插件 imports 通用能力 + DeepSeek 聊天记录导入——
+  - 新增 `imports` manifest（schemaVersion 4 / apiVersion 3）：文件上传、JSON/MD/TXT/HTML/ZIP 解析、分块提取、审核、应用；
+  - 新增 `plugin_imports` / `plugin_import_candidates` / `plugin_import_apply_log`；
+  - 新增按 `bot_id + qq_id` 的 `persona_bindings`，`PromptBuilder` 优先使用绑定人设，插件停用自动回退；
+  - 导入插件 `menran.deepseek-import`：提取角色人设、世界观、生日/喜好/关系/事件/约定；只对目标 QQ 生效；
+  - 后台插件详情新增导入记录、上传、预览、应用、开关。
+- 影响：后端 / 前端 / 文档 / 插件包
+- 提交：本次
+
 ## 2026-11-18 10:20
 
 - 设备：dev-machine · macOS · user · DSH Agent

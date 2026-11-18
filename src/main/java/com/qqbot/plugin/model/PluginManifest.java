@@ -43,6 +43,7 @@ public record PluginManifest(
         List<ConfigField> config,
         StorageSpec storage,
         List<ScheduleSpec> schedules,
+        List<ImportSpec> imports,
         String changelog) {
 
     @JsonIgnore
@@ -288,6 +289,13 @@ public record PluginManifest(
     public record SaveSpec(String table, Map<String, String> fields) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record ImportSpec(String id, String label, Boolean perUser,
+                             List<String> accept, Long maxBytes, String parser,
+                             String prompt, Integer chunkChars, Integer maxChars,
+                             List<String> targets, Boolean review) {
+    }
+
     @JsonIgnore
     public List<TableSpec> tables() {
         return storage == null || storage.tables() == null ? List.of() : storage.tables();
@@ -311,5 +319,20 @@ public record PluginManifest(
     @JsonIgnore
     public List<ConfigField> configFieldsOrEmpty() {
         return config == null ? List.of() : config;
+    }
+
+    @JsonIgnore
+    public List<ImportSpec> importsOrEmpty() {
+        return imports == null ? List.of() : imports;
+    }
+
+    @JsonIgnore
+    public ImportSpec importSpec(String id) {
+        for (ImportSpec s : importsOrEmpty()) {
+            if (s != null && id != null && id.equals(s.id())) {
+                return s;
+            }
+        }
+        return null;
     }
 }

@@ -41,9 +41,10 @@ public final class ManifestValidator {
             issues.add(ManifestIssue.of("manifest", "MANIFEST_MISSING", "manifest.json 解析失败"));
             return issues;
         }
-        if (m.schemaVersion() == null || (m.schemaVersion() != 2 && m.schemaVersion() != 3)) {
+        if (m.schemaVersion() == null
+                || (m.schemaVersion() != 2 && m.schemaVersion() != 3 && m.schemaVersion() != 4)) {
             issues.add(ManifestIssue.of("schemaVersion", "BAD_SCHEMA_VERSION",
-                    "schemaVersion 必须为 2 或 3"));
+                    "schemaVersion 必须为 2、3 或 4"));
         }
         if (m.id() == null || !ID.matcher(m.id()).matches()) {
             issues.add(ManifestIssue.of("id", "BAD_ID",
@@ -58,8 +59,9 @@ public final class ManifestValidator {
         if (m.version() == null || !SEMVER.matcher(m.version()).matches()) {
             issues.add(ManifestIssue.of("version", "BAD_VERSION", "version 需严格 semver，如 1.2.0"));
         }
-        if (m.apiVersion() == null || (m.apiVersion() != 1 && m.apiVersion() != 2)) {
-            issues.add(ManifestIssue.of("apiVersion", "BAD_API_VERSION", "apiVersion 支持 1 或 2"));
+        if (m.apiVersion() == null
+                || (m.apiVersion() != 1 && m.apiVersion() != 2 && m.apiVersion() != 3)) {
+            issues.add(ManifestIssue.of("apiVersion", "BAD_API_VERSION", "apiVersion 支持 1、2 或 3"));
         }
         if (m.runtime() == null || !RUNTIMES.contains(m.runtime())) {
             issues.add(ManifestIssue.of("runtime", "BAD_RUNTIME", "runtime 需为 data/prompt/hosted/local"));
@@ -79,14 +81,20 @@ public final class ManifestValidator {
                     "compat.minHostVersion 必填且为 semver"));
         }
 
-        validateIntent(m, issues);
-        validateActions(m, issues);
+        boolean importOnly = m.imports() != null && !m.imports().isEmpty();
+        if (!importOnly) {
+            validateIntent(m, issues);
+            validateActions(m, issues);
+        }
         validateRuntime(m, issues);
         validateMemory(m, issues);
-        if (m.schemaVersion() != null && m.schemaVersion() == 3) {
+        if (m.schemaVersion() != null && m.schemaVersion() >= 3) {
             validateConfig(m, issues);
             validateStorage(m, issues);
             validateSchedules(m, issues);
+        }
+        if (m.imports() != null && !m.imports().isEmpty()) {
+            validateImports(m, issues);
         }
         return issues;
     }
@@ -317,6 +325,91 @@ public final class ManifestValidator {
         if (spec.keyTemplate() != null && !spec.keyTemplate().contains("{")) {
             issues.add(ManifestIssue.of("memory.keyTemplate", "KEY_NO_ENTITY",
                     "keyTemplate 必须包含具体实体占位符（如 {song}）"));
+        }
+    }
+
+    private static final Set<String> IMPORT_ACCEPT = Set.of(
+            ".json", ".md", ".markdown", ".txt", ".html", ".htm", ".zip");
+    private static final Set<String> IMPORT_TARGETS = Set.of("facts", "style", "persona");
+
+    private static void validateImports(PluginManifest m, List<ManifestIssue> issues) {
+        if (m.schemaVersion() == null || m.schemaVersion() != 4) {
+            issues.add(ManifestIssue.of("imports", "IMPORT_SCHEMA",
+                    "声明 imports 必须使用 schemaVersion 4"));
+        }
+        if (m.apiVersion() == null || m.apiVersion() != 3) {
+            issues.add(ManifestIssue.of("imports", "IMPORT_API",
+                    "声明 imports 必须使用 apiVersion 3"));
+        }
+        if (m.imports().size() > 2) {
+            issues.add(ManifestIssue.of("imports", "TOO_MANY_IMPORTS", "最多 2 个导入入口"));
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        for (PluginManifest.ImportSpec s : m.imports()) {
+            if (s == null) {
+                continue;
+            }
+            String base = "imports." + s.id();
+            if (s.id() == null || !s.id().matches("^[a-z][a-z0-9_]{0,20}$")) {
+                issues.add(ManifestIssue.of(base, "BAD_IMPORT_ID", "导入 id 需为小写字母数字_"));
+                continue;
+            }
+            if (!ids.add(s.id())) {
+                issues.add(ManifestIssue.of(base, "IMPORT_DUPLICATE", "导入 id 重复"));
+            }
+            if (s.label() == null || s.label().isBlank() || s.label().length() > 24) {
+                issues.add(ManifestIssue.of(base + ".label", "BAD_IMPORT_LABEL", "label 需 1–24 字"));
+            }
+            if (!Boolean.TRUE.equals(s.perUser())) {
+                issues.add(ManifestIssue.of(base + ".perUser", "IMPORT_PER_USER",
+                        "第一版只支持 perUser=true"));
+            }
+            if (s.accept() == null || s.accept().isEmpty()) {
+                issues.add(ManifestIssue.of(base + ".accept", "IMPORT_ACCEPT_EMPTY",
+                        "accept 至少一个后缀"));
+            } else {
+                for (String a : s.accept()) {
+                    if (a == null || !IMPORT_ACCEPT.contains(a.toLowerCase())) {
+                        issues.add(ManifestIssue.of(base + ".accept", "IMPORT_ACCEPT_BAD",
+                                "不支持的后缀: " + a));
+                    }
+                }
+            }
+            if (s.maxBytes() == null || s.maxBytes() <= 0 || s.maxBytes() > 50L * 1024 * 1024) {
+                issues.add(ManifestIssue.of(base + ".maxBytes", "IMPORT_MAX_BYTES",
+                        "maxBytes 需在 1–50MB 之间"));
+            }
+            if (s.parser() == null || !"chat".equals(s.parser())) {
+                issues.add(ManifestIssue.of(base + ".parser", "IMPORT_PARSER",
+                        "第一版只支持 parser=chat"));
+            }
+            if (s.prompt() == null || s.prompt().isBlank() || s.prompt().contains("..")) {
+                issues.add(ManifestIssue.of(base + ".prompt", "IMPORT_PROMPT",
+                        "prompt 必须是包内相对路径"));
+            }
+            if (s.chunkChars() != null && (s.chunkChars() < 1000 || s.chunkChars() > 20000)) {
+                issues.add(ManifestIssue.of(base + ".chunkChars", "IMPORT_CHUNK",
+                        "chunkChars 需在 1000–20000"));
+            }
+            if (s.maxChars() != null && (s.maxChars() < 1000 || s.maxChars() > 300000)) {
+                issues.add(ManifestIssue.of(base + ".maxChars", "IMPORT_MAX_CHARS",
+                        "maxChars 需在 1000–300000"));
+            }
+            if (s.targets() == null || s.targets().isEmpty()) {
+                issues.add(ManifestIssue.of(base + ".targets", "IMPORT_TARGETS_EMPTY",
+                        "targets 至少一个"));
+            } else {
+                for (String t : s.targets()) {
+                    if (t == null || !IMPORT_TARGETS.contains(t)) {
+                        issues.add(ManifestIssue.of(base + ".targets", "IMPORT_TARGET_BAD",
+                                "target 只允许 facts/style/persona: " + t));
+                    }
+                }
+            }
+            if (!Boolean.TRUE.equals(s.review())) {
+                issues.add(ManifestIssue.of(base + ".review", "IMPORT_REVIEW_REQUIRED",
+                        "第一版必须 review=true"));
+            }
         }
     }
 

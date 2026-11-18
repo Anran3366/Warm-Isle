@@ -97,7 +97,7 @@ public class PromptBuilder {
     public List<Map<String, String>> build(long userId, List<ChatMessage> history, String userText,
                                            long gapMinutes, com.qqbot.chat.MediaPlanner.Plan mediaPlan) {
         boolean dynamic = props.getPrompt().isDynamic();
-        PersonaExamples personaExamples = parsePersonaExamples(personaText());
+        PersonaExamples personaExamples = parsePersonaExamples(personaText(userId));
         String personaText = personaExamples.persona();
         // 记忆 v2：按这句话检索，而不是把全部事实塞进去；自进化开启时再补常驻印象/跟进/表达
         String memoryBlock = recallPlanner == null
@@ -416,9 +416,9 @@ public class PromptBuilder {
         }
     }
 
-    private String personaText() {
+    private String personaText(long userId) {
         try {
-            Persona active = personas.active();
+            Persona active = personas.activeFor(userId);
             if (active != null && active.content() != null && !active.content().isBlank()) {
                 return active.content();
             }

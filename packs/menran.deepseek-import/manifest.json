@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 4,
+  "id": "menran.deepseek-import",
+  "name": "DeepSeek 聊天记录导入",
+  "version": "1.0.0",
+  "apiVersion": 3,
+  "runtime": "prompt",
+  "description": "导入 DeepSeek 聊天记录，提取角色人设、世界观和重要信息",
+  "author": { "name": "menran" },
+  "license": "MIT",
+  "tags": ["导入", "人设", "记忆"],
+  "compat": { "minHostVersion": "1.0.0" },
+  "prompt": {
+    "system": "prompts/extract.md",
+    "maxTokens": 1000,
+    "temperature": 0.2
+  },
+  "imports": [{
+    "id": "deepseek",
+    "label": "DeepSeek 聊天记录",
+    "perUser": true,
+    "accept": [".json", ".md", ".markdown", ".txt", ".html", ".htm", ".zip"],
+    "maxBytes": 20971520,
+    "parser": "chat",
+    "prompt": "prompts/extract.md",
+    "chunkChars": 7000,
+    "maxChars": 150000,
+    "targets": ["facts", "style", "persona"],
+    "review": true
+  }],
+  "permissions": {},
+  "quota": { "perUserPerDay": 5 }
+}
