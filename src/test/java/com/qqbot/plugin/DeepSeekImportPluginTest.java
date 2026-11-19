@@ -6,10 +6,13 @@ import com.qqbot.plugin.manifest.ManifestParser;
 import com.qqbot.plugin.model.ManifestIssue;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -43,5 +46,35 @@ class DeepSeekImportPluginTest {
         assertEquals(3, transcript.messages().size());
         assertEquals("assistant", transcript.messages().get(1).role());
         assertTrue(transcript.messages().get(0).content().contains("林深"));
+    }
+
+    @Test
+    void markdownHtmlAndZipAlsoParse() throws Exception {
+        var parser = new ChatTranscriptParser();
+        var md = parser.parse("chat.md", """
+                ## User
+                在吗
+                ## Assistant
+                在的
+                """.getBytes(StandardCharsets.UTF_8));
+        assertEquals(2, md.messages().size());
+        assertEquals("user", md.messages().get(0).role());
+
+        var html = parser.parse("chat.html", """
+                <html><body><p>用户：今天好累</p><p>助手：怎么啦</p></body></html>
+                """.getBytes(StandardCharsets.UTF_8));
+        assertEquals(2, html.messages().size());
+
+        ByteArrayOutputStream zipBytes = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(zipBytes)) {
+            zip.putNextEntry(new ZipEntry("a.json"));
+            zip.write("""
+                    {"title":"压缩包","messages":[{"role":"user","content":"你好"},{"role":"assistant","content":"你好呀"}]}
+                    """.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        var zip = parser.parse("chat.zip", zipBytes.toByteArray());
+        assertEquals("压缩包", zip.title());
+        assertEquals(2, zip.messages().size());
     }
 }

@@ -82,6 +82,10 @@ public class PluginImportController {
         if (plugin == null) {
             return fail("插件未安装");
         }
+        Map<String, Object> owned = importer.get(importId);
+        if (owned == null || !id.equals(owned.get("pluginId"))) {
+            return fail("导入记录不存在");
+        }
         Map<String, Object> b = body == null ? Map.of() : body;
         boolean applyFacts = !Boolean.FALSE.equals(b.get("applyFacts"));
         boolean applyPersona = !Boolean.FALSE.equals(b.get("applyPersona"));
@@ -113,6 +117,10 @@ public class PluginImportController {
         InstalledPlugin plugin = registry.find(id);
         if (plugin == null) {
             return fail("插件未安装");
+        }
+        Map<String, Object> owned = importer.get(importId);
+        if (owned == null || !id.equals(owned.get("pluginId"))) {
+            return fail("导入记录不存在");
         }
         try {
             return importer.setEnabled(importId, enabled);

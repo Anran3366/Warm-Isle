@@ -194,6 +194,10 @@ public class PluginImportService {
         }
         long targetQq = ((Number) row.get("targetQq")).longValue();
         String pluginId = String.valueOf(row.get("pluginId"));
+        // 先校验人设，避免 facts 已写、人设才失败留下半截状态
+        if (applyPersona) {
+            validatePersona(payload);
+        }
         int factCount = 0;
         if (applyFacts) {
             factCount += applyFacts(payload, targetQq, factIndexes);
@@ -230,7 +234,8 @@ public class PluginImportService {
                 // 多记录切换失败不影响本次应用
             }
         }
-        updateStatus(importId, "applied", personaId, enablePersona ? 1 : 0);
+        boolean enabledNow = enablePersona && personaId != null;
+        updateStatus(importId, "applied", personaId, enabledNow ? 1 : 0);
         try {
             snapshots.rebuild(targetQq);
         } catch (Exception ignored) {
@@ -240,7 +245,7 @@ public class PluginImportService {
         out.put("ok", true);
         out.put("factCount", factCount);
         out.put("personaId", personaId);
-        out.put("enabled", enablePersona);
+        out.put("enabled", enabledNow);
         return out;
     }
 
@@ -423,11 +428,13 @@ public class PluginImportService {
     }
 
     private int applyFacts(JsonNode payload, long targetQq, List<Integer> indexes) {
+        Set<Integer> selected = indexes == null ? null : new LinkedHashSet<>(indexes);
+        if (selected != null && selected.isEmpty()) {
+            return 0;
+        }
         JsonNode fs = payload.get("facts");
         int count = 0;
         if (fs != null && fs.isArray()) {
-            Set<Integer> selected = indexes == null || indexes.isEmpty()
-                    ? null : new LinkedHashSet<>(indexes);
             for (int i = 0; i < fs.size(); i++) {
                 if (selected != null && !selected.contains(i)) {
                     continue;
@@ -460,6 +467,20 @@ public class PluginImportService {
         return count;
     }
 
+    private void validatePersona(JsonNode payload) {
+        JsonNode p = payload == null ? null : payload.get("persona");
+        if (p == null || !p.path("detected").asBoolean(false)) {
+            return;
+        }
+        String content = personaContent(p);
+        String lower = content.toLowerCase(Locale.ROOT);
+        for (String bad : BAD_PERSONA) {
+            if (lower.contains(bad)) {
+                throw new IllegalArgumentException("人设包含疑似越权指令，已拒绝应用: " + bad);
+            }
+        }
+    }
+
     private Long applyPersona(JsonNode payload, long targetQq, String pluginId, boolean enable) {
         JsonNode p = payload.get("persona");
         if (p == null || !p.path("detected").asBoolean(false)) {
@@ -473,12 +494,7 @@ public class PluginImportService {
         if (content.isBlank()) {
             return null;
         }
-        String lower = content.toLowerCase(Locale.ROOT);
-        for (String bad : BAD_PERSONA) {
-            if (lower.contains(bad)) {
-                throw new IllegalArgumentException("人设包含疑似越权指令，已拒绝应用: " + bad);
-            }
-        }
+        validatePersona(payload);
         long personaId = personas.create(cut(name, 30) + " · " + targetQq, content);
         if (enable) {
             Long botId = BotContext.get();

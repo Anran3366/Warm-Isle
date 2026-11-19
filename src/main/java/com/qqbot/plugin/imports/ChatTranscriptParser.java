@@ -200,8 +200,8 @@ public class ChatTranscriptParser {
                 }
                 currentRole = role;
                 current = new StringBuilder(line.replaceFirst(
-                        "^(?:#{1,3}\\s*)?(?:\\*\\*)?(?:User|Human|用户|我|You|Assistant|AI|DeepSeek|助手|你)"
-                                + "(?:\\*\\*)?\\s*[:：]\\s*", ""));
+                        "(?i)^(?:#{1,3}\\s*)?(?:\\*\\*)?(?:user|human|用户|我|you|assistant|ai|deepseek|助手|你)"
+                                + "(?:\\*\\*)?\\s*[:：]?\\s*", ""));
             } else if (currentRole != null) {
                 current.append('\n').append(line);
             }
@@ -217,6 +217,16 @@ public class ChatTranscriptParser {
 
     private String roleOfLine(String line) {
         String lower = line.toLowerCase(Locale.ROOT);
+        String bare = lower.replaceFirst("^#{1,3}\\s*", "")
+                .replaceFirst("^\\*\\*", "").replaceFirst("\\*\\*$", "").trim();
+        if (bare.equals("user") || bare.equals("human") || bare.equals("用户") || bare.equals("我")
+                || bare.equals("you")) {
+            return "user";
+        }
+        if (bare.equals("assistant") || bare.equals("ai") || bare.equals("deepseek")
+                || bare.equals("助手") || bare.equals("你")) {
+            return "assistant";
+        }
         if (lower.matches("^(?:#{1,3}\\s*)?(?:\\*\\*)?(user|human|用户|我|you)(?:\\*\\*)?\\s*[:：].*")) {
             return "user";
         }
