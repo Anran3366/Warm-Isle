@@ -85,3 +85,13 @@ store-app/deploy/.env.store
 store-app/deploy/signing.key
 
 /pid
+
+# 商店服务源码：依赖、运行数据、密钥不进 git
+/store-app/node_modules/
+/store-app/data/
+/store-app/.env
+/store-app/.env.*
+!/store-app/.env.example
+/store-app/deploy/.env.prod
+/store-app/deploy/.env.store
+/store-app/deploy/signing.key

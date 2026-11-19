@@ -586,6 +586,29 @@ public class Db {
         } catch (Exception e) {
             log.warn("插件表补列失败（不影响启动）: {}", e.getMessage());
         }
+        try {
+            java.util.Set<String> cols = new java.util.LinkedHashSet<>();
+            try (ResultSet rs = s.executeQuery("PRAGMA table_info(plugin_imports)")) {
+                while (rs.next()) {
+                    cols.add(rs.getString("name"));
+                }
+            }
+            String[][] importCols = {
+                    {"progress", "INTEGER NOT NULL DEFAULT 0"},
+                    {"stage", "TEXT"},
+                    {"total_chunks", "INTEGER NOT NULL DEFAULT 0"},
+                    {"done_chunks", "INTEGER NOT NULL DEFAULT 0"},
+                    {"truncated", "INTEGER NOT NULL DEFAULT 0"},
+            };
+            for (String[] col : importCols) {
+                if (!cols.contains(col[0])) {
+                    s.execute("ALTER TABLE plugin_imports ADD COLUMN " + col[0] + " " + col[1]);
+                    log.info("插件表补列: plugin_imports.{}", col[0]);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("插件表补列失败（不影响启动）: {}", e.getMessage());
+        }
     }
 
     public Connection open() throws SQLException {        Long ctx = com.qqbot.bot.BotContext.get();

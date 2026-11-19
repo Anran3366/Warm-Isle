@@ -25,6 +25,8 @@
 | 博客每日更新 | ✅ | 每天 10:00 systemd timer 触发：DeepSeek 按 40 个主题池生成新文章（标题/slug 查重）→ 博客上传 → IndexNow 推送；文章带 FAQPage JSON-LD，`/blog/llms.txt` 与 AI 爬虫放行 |
 | 插件商店 | ✅ | 官方商店 A 审核分发，B/C/D 只读已审核索引；data/prompt/hosted/local 四类 runtime；Ed25519 验签 + 密钥轮换；已安装可升级、changelog、hosted/local 服务版本巡检；唱歌包 1.0.2 |
 | 插件框架 v3 | ✅ | 作者声明 `config` / `storage.tables` / `schedules`；后台自动配置表单、每插件独立 SQLite（`data/plugin-data/<id>.db`）、数据列表/详情、定时手动触发；周报插件验证 |
+| 导入异步队列 | ✅ | 上传排队、分块落盘、进度轮询、重启续跑、失败重试；审核后清原始分块 |
+| 商店源码入库 | ✅ | `store-app/` 已纳入 git；不含依赖/数据/密钥 |
 | 插件开发手册 v4 | ✅ | `docs/plugin-dev-manual-v4.md`；博客同 URL 更新；config/storage/schedules/imports、按 QQ 人设 |
 | 插件 imports v4 | ✅ | 上传/解析/提取/审核/应用；`menran.deepseek-import` 提取人设+世界观+事实；按 QQ 绑定人设，插件停用回退；只对目标用户生效 |
 | 主动消息 | ✅ | 按「机器人 × 聊天对象」；早安/晚安/沉默/跟进/情感记忆 |

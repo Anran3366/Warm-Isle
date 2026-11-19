@@ -13,6 +13,7 @@ import com.qqbot.memory.evolve.PersonProfileService;
 import com.qqbot.memory.evolve.ProfileSnapshotService;
 import com.qqbot.plugin.model.PluginManifest;
 import com.qqbot.plugin.registry.InstalledPlugin;
+import com.qqbot.plugin.registry.PluginRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 通用导入引擎：上传文件 → 解析 → 分块 → 模型抽取 → 审核 → 应用。
@@ -81,11 +86,18 @@ public class PluginImportService {
     private final PersonProfileService profiles;
     private final ProfileSnapshotService snapshots;
     private final ChatTranscriptParser parser;
+    private final PluginRegistry registry;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final ExecutorService pool = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "plugin-import-worker");
+        t.setDaemon(true);
+        return t;
+    });
+    private final Set<String> running = ConcurrentHashMap.newKeySet();
 
     public PluginImportService(Db db, DeepSeekClient llm, PersonaStore personas, FactStore facts,
                                PersonProfileService profiles, ProfileSnapshotService snapshots,
-                               ChatTranscriptParser parser) {
+                               ChatTranscriptParser parser, PluginRegistry registry) {
         this.db = db;
         this.llm = llm;
         this.personas = personas;
@@ -93,6 +105,37 @@ public class PluginImportService {
         this.profiles = profiles;
         this.snapshots = snapshots;
         this.parser = parser;
+        this.registry = registry;
+    }
+
+    @jakarta.annotation.PreDestroy
+    public void shutdown() {
+        pool.shutdownNow();
+    }
+
+    /** 重启后把排队/中断的任务接回来。 */
+    @org.springframework.context.event.EventListener(
+            org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void resumePending() {
+        for (Long botId : registry.allBotIds()) {
+            try {
+                com.qqbot.bot.BotContext.run(botId, () -> {
+                    try (Connection c = db.open();
+                         PreparedStatement ps = c.prepareStatement(
+                                 "SELECT id FROM plugin_imports WHERE status IN ('queued','extracting')")) {
+                        try (ResultSet rs = ps.executeQuery()) {
+                            while (rs.next()) {
+                                submit(botId, rs.getLong(1));
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        // 某个账号库还没建导入表
+                    }
+                });
+            } catch (Exception e) {
+                log.debug("恢复导入任务失败 bot={}: {}", botId, e.getMessage());
+            }
+        }
     }
 
     public Map<String, Object> start(InstalledPlugin plugin, long targetQq,
@@ -120,29 +163,180 @@ public class PluginImportService {
         if (transcript.messages().isEmpty()) {
             throw new IllegalArgumentException("没有解析出聊天消息");
         }
-        long importId = insertImport(plugin.pluginId(), targetQq, transcript, fileName);
-        try {
-            Map<String, Object> result = extract(plugin, spec, transcript, targetQq);
-            updateImport(importId, "review", null, result);
-            saveCandidate(importId, result);
-            Map<String, Object> out = new LinkedHashMap<>();
-            out.put("importId", importId);
-            out.put("status", "review");
-            out.put("messageCount", transcript.messages().size());
-            out.put("preview", result);
-            return out;
-        } catch (Exception e) {
-            updateImport(importId, "failed", e.getMessage(), null);
-            throw e instanceof IllegalArgumentException ia ? ia
-                    : new IllegalStateException("提取失败: " + e.getMessage(), e);
+        String text = renderTranscript(transcript.messages());
+        int maxChars = spec.maxChars() == null ? 120000 : spec.maxChars();
+        boolean truncated = text.length() > maxChars;
+        if (truncated) {
+            text = text.substring(0, maxChars);
         }
+        int chunkChars = spec.chunkChars() == null ? 7000 : spec.chunkChars();
+        List<String> chunks = chunks(text, chunkChars);
+        if (chunks.isEmpty()) {
+            throw new IllegalArgumentException("没有可提取的内容");
+        }
+        boolean chunkTruncated = chunks.size() > MAX_CHUNKS;
+        if (chunkTruncated) {
+            chunks = new ArrayList<>(chunks.subList(0, MAX_CHUNKS));
+        }
+        Long botId = BotContext.get();
+        if (botId == null) {
+            throw new IllegalStateException("缺少机器人账号上下文");
+        }
+        long importId = insertImport(plugin.pluginId(), targetQq, transcript,
+                fileName, chunks, truncated || chunkTruncated);
+        submit(botId, importId);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("importId", importId);
+        out.put("status", "queued");
+        out.put("progress", 0);
+        out.put("totalChunks", chunks.size());
+        out.put("messageCount", transcript.messages().size());
+        return out;
+    }
+
+    /** 后台 worker：按 chunk 断点续跑，每完成一块就落盘。 */
+    public void process(long botId, long importId) {
+        BotContext.run(botId, () -> processInContext(importId));
+    }
+
+    private void processInContext(long importId) {
+        Map<String, Object> row = importRow(importId);
+        if (row == null) {
+            return;
+        }
+        String status = String.valueOf(row.get("status"));
+        if ("review".equals(status) || "applied".equals(status)) {
+            return;
+        }
+        String pluginId = String.valueOf(row.get("pluginId"));
+        InstalledPlugin plugin = registry.find(pluginId);
+        if (plugin == null || plugin.manifest() == null) {
+            failed(importId, "插件已卸载或不完整");
+            return;
+        }
+        PluginManifest.ImportSpec spec = plugin.manifest().importsOrEmpty().isEmpty()
+                ? null : plugin.manifest().importsOrEmpty().get(0);
+        if (spec == null) {
+            failed(importId, "插件没有声明 imports");
+            return;
+        }
+        long targetQq = ((Number) row.get("targetQq")).longValue();
+        List<ChunkRow> chunks = chunks(importId);
+        if (chunks.isEmpty()) {
+            failed(importId, "没有可恢复的分块，请重新上传");
+            return;
+        }
+        String prompt;
+        try {
+            prompt = readPrompt(plugin, spec.prompt());
+        } catch (Exception e) {
+            failed(importId, e.getMessage());
+            return;
+        }
+        int total = chunks.size();
+        int done = 0;
+        List<JsonNode> results = new ArrayList<>();
+        for (ChunkRow chunk : chunks) {
+            if ("done".equals(chunk.status) && chunk.payload != null) {
+                JsonNode old = parseJson(chunk.payload);
+                if (old != null) {
+                    results.add(old);
+                    done++;
+                    continue;
+                }
+            }
+            updateState(importId, "extracting", total == 0 ? 0 : done * 100 / total,
+                    "提取第 " + (done + 1) + "/" + total + " 段", null);
+            try {
+                List<Map<String, String>> messages = new ArrayList<>();
+                messages.add(Map.of("role", "system", "content", EXTRACT_SYSTEM + "\n\n" + prompt));
+                messages.add(Map.of("role", "user", "content",
+                        "聊天记录片段：\n" + chunk.text + "\n\n请只输出 JSON。"));
+                LlmResult r = llm.chat(messages, 0.2, EXTRACT_TOKENS, targetQq);
+                JsonNode node = parseJson(r.content());
+                if (node == null) {
+                    throw new IllegalStateException("模型没有返回可解析的 JSON");
+                }
+                saveChunkDone(importId, chunk.index, node);
+                results.add(node);
+                done++;
+                updateState(importId, "extracting", done * 100 / total,
+                        "已完成 " + done + "/" + total + " 段", null);
+            } catch (Exception e) {
+                saveChunkError(importId, chunk.index, e.getMessage());
+                failed(importId, "第 " + (chunk.index + 1) + " 段失败: " + e.getMessage());
+                return;
+            }
+        }
+        if (results.isEmpty()) {
+            failed(importId, "模型没有返回可解析的提取结果");
+            return;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>();
+        mergeResults(results, merged);
+        try {
+            saveCandidate(importId, merged);
+            updateState(importId, "review", 100, "待确认", null);
+            deleteChunks(importId);
+        } catch (Exception e) {
+            failed(importId, "保存提取结果失败: " + e.getMessage());
+        }
+    }
+
+    public Map<String, Object> retry(long importId) {
+        Long botId = BotContext.get();
+        if (botId == null) {
+            throw new IllegalStateException("缺少机器人账号上下文");
+        }
+        Map<String, Object> row = importRow(importId);
+        if (row == null) {
+            throw new IllegalArgumentException("导入记录不存在");
+        }
+        String status = String.valueOf(row.get("status"));
+        if ("review".equals(status) || "applied".equals(status)) {
+            throw new IllegalArgumentException("这个导入已经完成，不需要重试");
+        }
+        try (Connection c = db.open()) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE plugin_import_chunks SET status='pending', error=NULL "
+                            + "WHERE import_id=? AND status<>'done'")) {
+                ps.setLong(1, importId);
+                ps.executeUpdate();
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("重置分块失败: " + e.getMessage(), e);
+        }
+        updateState(importId, "queued", 0, "排队中", null);
+        submit(botId, importId);
+        return Map.of("ok", true, "status", "queued");
+    }
+
+    private void submit(long botId, long importId) {
+        String key = botId + ":" + importId;
+        if (!running.add(key)) {
+            return;
+        }
+        pool.submit(() -> {
+            try {
+                process(botId, importId);
+            } catch (Exception e) {
+                log.warn("导入任务异常 bot={} importId={}: {}", botId, importId, e.getMessage());
+                BotContext.run(botId, () -> failed(importId, e.getMessage()));
+            } finally {
+                running.remove(key);
+            }
+        });
+    }
+
+    private void failed(long importId, String error) {
+        updateState(importId, "failed", 0, "失败", error == null ? "未知错误" : error);
     }
 
     public List<Map<String, Object>> list(String pluginId) {
         List<Map<String, Object>> out = new ArrayList<>();
         String sql = "SELECT id, target_qq, title, file_name, message_count, status, error, "
-                + "persona_id, enabled, created_at FROM plugin_imports WHERE plugin_id=? "
-                + "ORDER BY id DESC LIMIT 100";
+                + "persona_id, enabled, progress, stage, total_chunks, done_chunks, truncated, created_at "
+                + "FROM plugin_imports WHERE plugin_id=? ORDER BY id DESC LIMIT 100";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, pluginId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -162,7 +356,12 @@ public class PluginImportService {
                         row.put("personaName", p == null ? "" : p.name());
                     }
                     row.put("enabled", rs.getInt(9) == 1);
-                    row.put("createdAt", rs.getString(10));
+                    row.put("progress", rs.getInt(10));
+                    row.put("stage", rs.getString(11));
+                    row.put("totalChunks", rs.getInt(12));
+                    row.put("doneChunks", rs.getInt(13));
+                    row.put("truncated", rs.getInt(14) == 1);
+                    row.put("createdAt", rs.getString(15));
                     out.add(row);
                 }
             }
@@ -194,7 +393,6 @@ public class PluginImportService {
         }
         long targetQq = ((Number) row.get("targetQq")).longValue();
         String pluginId = String.valueOf(row.get("pluginId"));
-        // 先校验人设，避免 facts 已写、人设才失败留下半截状态
         if (applyPersona) {
             validatePersona(payload);
         }
@@ -226,7 +424,7 @@ public class PluginImportService {
             try (Connection c = db.open();
                  PreparedStatement ps = c.prepareStatement(
                          "UPDATE plugin_imports SET enabled=0 WHERE plugin_id=? AND target_qq=? AND id<>?")) {
-                ps.setString(1, String.valueOf(row.get("pluginId")));
+                ps.setString(1, pluginId);
                 ps.setLong(2, targetQq);
                 ps.setLong(3, importId);
                 ps.executeUpdate();
@@ -291,40 +489,7 @@ public class PluginImportService {
         return out;
     }
 
-    // ---------------- extraction ----------------
-
-    private Map<String, Object> extract(InstalledPlugin plugin, PluginManifest.ImportSpec spec,
-                                        ChatTranscriptParser.Transcript transcript, long targetQq) throws Exception {
-        String prompt = readPrompt(plugin, spec.prompt());
-        String text = renderTranscript(transcript.messages());
-        int maxChars = spec.maxChars() == null ? 120000 : spec.maxChars();
-        if (text.length() > maxChars) {
-            text = text.substring(0, maxChars);
-        }
-        int chunkChars = spec.chunkChars() == null ? 7000 : spec.chunkChars();
-        List<String> chunks = chunks(text, chunkChars);
-        if (chunks.size() > MAX_CHUNKS) {
-            chunks = chunks.subList(0, MAX_CHUNKS);
-        }
-        Map<String, Object> merged = new LinkedHashMap<>();
-        List<JsonNode> results = new ArrayList<>();
-        for (String chunk : chunks) {
-            List<Map<String, String>> messages = new ArrayList<>();
-            messages.add(Map.of("role", "system", "content", EXTRACT_SYSTEM + "\n\n" + prompt));
-            messages.add(Map.of("role", "user", "content",
-                    "聊天记录片段：\n" + chunk + "\n\n请只输出 JSON。"));
-            LlmResult r = llm.chat(messages, 0.2, EXTRACT_TOKENS, targetQq);
-            String content = r.content() == null ? "" : r.content();
-            JsonNode node = parseJson(content);
-            if (node != null) {
-                results.add(node);
-            }
-        }
-        if (results.isEmpty()) {
-            throw new IllegalStateException("模型没有返回可解析的提取结果");
-        }
-        mergeResults(results, merged);
-        return merged;
+    private record ChunkRow(int index, String text, String status, String payload) {
     }
 
     private void mergeResults(List<JsonNode> results, Map<String, Object> out) {
@@ -668,9 +833,12 @@ public class PluginImportService {
     // ---------------- storage ----------------
 
     private long insertImport(String pluginId, long targetQq,
-                              ChatTranscriptParser.Transcript transcript, String fileName) {
+                              ChatTranscriptParser.Transcript transcript, String fileName,
+                              List<String> chunks, boolean truncated) {
         String sql = "INSERT INTO plugin_imports(plugin_id, target_qq, source, title, file_name, "
-                + "message_count, status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)";
+                + "message_count, status, progress, stage, total_chunks, done_chunks, truncated, "
+                + "created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        long importId;
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(
                 sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, pluginId);
@@ -679,29 +847,120 @@ public class PluginImportService {
             ps.setString(4, cut(transcript.title(), 80));
             ps.setString(5, cut(fileName, 120));
             ps.setInt(6, transcript.messages().size());
-            ps.setString(7, "extracting");
-            ps.setString(8, now());
-            ps.setString(9, now());
+            ps.setString(7, "queued");
+            ps.setInt(8, 0);
+            ps.setString(9, "排队中");
+            ps.setInt(10, chunks.size());
+            ps.setInt(11, 0);
+            ps.setInt(12, truncated ? 1 : 0);
+            ps.setString(13, now());
+            ps.setString(14, now());
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
-                return rs.next() ? rs.getLong(1) : 0;
+                importId = rs.next() ? rs.getLong(1) : 0;
             }
         } catch (Exception e) {
             throw new IllegalStateException("创建导入记录失败: " + e.getMessage(), e);
         }
-    }
-
-    private void updateImport(long id, String status, String error, Map<String, Object> preview) {
+        if (importId <= 0) {
+            throw new IllegalStateException("创建导入记录失败");
+        }
         try (Connection c = db.open();
              PreparedStatement ps = c.prepareStatement(
-                     "UPDATE plugin_imports SET status=?, error=?, updated_at=? WHERE id=?")) {
+                     "INSERT INTO plugin_import_chunks(import_id, chunk_index, text, status, updated_at) "
+                             + "VALUES(?,?,?,?,?)")) {
+            for (int i = 0; i < chunks.size(); i++) {
+                ps.setLong(1, importId);
+                ps.setInt(2, i);
+                ps.setString(3, chunks.get(i));
+                ps.setString(4, "pending");
+                ps.setString(5, now());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (Exception e) {
+            throw new IllegalStateException("保存导入分块失败: " + e.getMessage(), e);
+        }
+        return importId;
+    }
+
+    private void updateState(long id, String status, int progress, String stage, String error) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE plugin_imports SET status=?, progress=?, stage=?, error=?, updated_at=? "
+                             + "WHERE id=?")) {
             ps.setString(1, status);
-            ps.setString(2, error == null ? null : cut(error, 500));
-            ps.setString(3, now());
-            ps.setLong(4, id);
+            ps.setInt(2, Math.max(0, Math.min(100, progress)));
+            ps.setString(3, cut(stage, 100));
+            ps.setString(4, error == null ? null : cut(error, 500));
+            ps.setString(5, now());
+            ps.setLong(6, id);
             ps.executeUpdate();
         } catch (Exception e) {
             log.debug("更新导入状态失败: {}", e.getMessage());
+        }
+    }
+
+    private List<ChunkRow> chunks(long importId) {
+        List<ChunkRow> out = new ArrayList<>();
+        String sql = "SELECT chunk_index, text, status, payload FROM plugin_import_chunks "
+                + "WHERE import_id=? ORDER BY chunk_index";
+        try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, importId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    out.add(new ChunkRow(rs.getInt(1), rs.getString(2), rs.getString(3), rs.getString(4)));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("读取导入分块失败: {}", e.getMessage());
+        }
+        return out;
+    }
+
+    private void saveChunkDone(long importId, int index, JsonNode payload) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE plugin_import_chunks SET status='done', payload=?, error=NULL, updated_at=? "
+                             + "WHERE import_id=? AND chunk_index=?")) {
+            ps.setString(1, mapper.writeValueAsString(payload));
+            ps.setString(2, now());
+            ps.setLong(3, importId);
+            ps.setInt(4, index);
+            ps.executeUpdate();
+            try (PreparedStatement up = c.prepareStatement(
+                    "UPDATE plugin_imports SET done_chunks=done_chunks+1 WHERE id=?")) {
+                up.setLong(1, importId);
+                up.executeUpdate();
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("保存分块结果失败: " + e.getMessage(), e);
+        }
+    }
+
+    private void saveChunkError(long importId, int index, String error) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "UPDATE plugin_import_chunks SET status='error', error=?, updated_at=? "
+                             + "WHERE import_id=? AND chunk_index=?")) {
+            ps.setString(1, cut(error, 300));
+            ps.setString(2, now());
+            ps.setLong(3, importId);
+            ps.setInt(4, index);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            log.debug("保存分块错误失败: {}", e.getMessage());
+        }
+    }
+
+    private void deleteChunks(long importId) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(
+                     "DELETE FROM plugin_import_chunks WHERE import_id=?")) {
+            ps.setLong(1, importId);
+            ps.executeUpdate();
+        } catch (Exception e) {
+            log.debug("清理导入分块失败: {}", e.getMessage());
         }
     }
 
@@ -747,7 +1006,8 @@ public class PluginImportService {
 
     private Map<String, Object> importRow(long id) {
         String sql = "SELECT id, plugin_id, target_qq, title, file_name, message_count, status, "
-                + "error, persona_id, enabled, created_at FROM plugin_imports WHERE id=?";
+                + "error, persona_id, enabled, progress, stage, total_chunks, done_chunks, truncated, "
+                + "created_at FROM plugin_imports WHERE id=?";
         try (Connection c = db.open(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setLong(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -765,7 +1025,12 @@ public class PluginImportService {
                 row.put("error", rs.getString(8));
                 row.put("personaId", rs.getLong(9));
                 row.put("enabled", rs.getInt(10) == 1);
-                row.put("createdAt", rs.getString(11));
+                row.put("progress", rs.getInt(11));
+                row.put("stage", rs.getString(12));
+                row.put("totalChunks", rs.getInt(13));
+                row.put("doneChunks", rs.getInt(14));
+                row.put("truncated", rs.getInt(15) == 1);
+                row.put("createdAt", rs.getString(16));
                 return row;
             }
         } catch (Exception e) {

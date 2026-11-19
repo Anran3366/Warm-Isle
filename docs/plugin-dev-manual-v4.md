@@ -986,7 +986,13 @@ GET  /api/plugins/{id}/imports            记录列表
 GET  /api/plugins/{id}/imports/{id}       预览
 POST /api/plugins/{id}/imports/{id}/apply
 POST /api/plugins/{id}/imports/{id}/enable?enabled=
+POST /api/plugins/{id}/imports/{id}/retry
 ```
+
+上传是异步的：先返回 `queued`，后台按分块提取，进度通过
+`GET /api/plugins/{id}/imports/{id}` 的 `progress/stage` 查看。
+分块结果会落盘，服务重启自动接回；失败重试只跑未完成分块。
+进入审核后原始分块删除。
 
 ## 5.9  按 QQ 的人设与长期记忆
 

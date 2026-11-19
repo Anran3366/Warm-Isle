@@ -158,7 +158,7 @@ export function validateManifest(m) {
     return [issue('manifest', 'NOT_OBJECT', 'manifest 必须是对象')]
   }
 
-  need(m.schemaVersion === 2, 'manifest.schemaVersion', 'BAD_SCHEMA', 'schemaVersion 必须为 2')
+  need([2, 3, 4].includes(m.schemaVersion), 'manifest.schemaVersion', 'BAD_SCHEMA', 'schemaVersion 必须为 2、3 或 4')
   need(
     typeof m.id === 'string' && /^[a-z0-9][a-z0-9._-]{2,48}$/.test(m.id),
     'manifest.id',
@@ -173,7 +173,7 @@ export function validateManifest(m) {
     'BAD_VERSION',
     '版本必须是严格 semver（x.y.z）',
   )
-  need(m.apiVersion === 1, 'manifest.apiVersion', 'BAD_API', 'apiVersion 当前只支持 1')
+  need([1, 2, 3].includes(m.apiVersion), 'manifest.apiVersion', 'BAD_API', 'apiVersion 必须为 1、2 或 3')
   need(RUNTIMES.has(m.runtime), 'manifest.runtime', 'BAD_RUNTIME', 'runtime 必须是 data/prompt/hosted/local')
   const descLen = typeof m.description === 'string' ? [...m.description].length : 0
   need(descLen > 0 && descLen <= 80, 'manifest.description', 'BAD_DESC', '描述必填且不超过 80 字')
@@ -193,42 +193,60 @@ export function validateManifest(m) {
     'minHostVersion 必须是 semver',
   )
 
-  need(!!m.intent?.id, 'manifest.intent.id', 'MISSING_INTENT', '必须声明 intent.id')
-  const ex = m.intent?.examples
-  if (!Array.isArray(ex) || ex.length < 5 || ex.length > 10) {
-    issues.push(issue('manifest.intent.examples', 'BAD_EXAMPLES', '示例句 5–10 条'))
-  } else {
-    ex.forEach((s, i) => {
-      const len = typeof s === 'string' ? [...s.trim()].length : 0
-      if (len < 3) {
-        issues.push(
-          issue(`manifest.intent.examples[${i}]`, 'EXAMPLE_TOO_SHORT', '示例句至少 3 个字'),
+  const importOnly = Array.isArray(m.imports) && m.imports.length > 0
+  if (!importOnly) {
+    need(!!m.intent?.id, 'manifest.intent.id', 'MISSING_INTENT', '必须声明 intent.id')
+    const ex = m.intent?.examples
+    if (!Array.isArray(ex) || ex.length < 5 || ex.length > 10) {
+      issues.push(issue('manifest.intent.examples', 'BAD_EXAMPLES', '示例句 5–10 条'))
+    } else {
+      ex.forEach((s, i) => {
+        const len = typeof s === 'string' ? [...s.trim()].length : 0
+        if (len < 3) {
+          issues.push(
+            issue(`manifest.intent.examples[${i}]`, 'EXAMPLE_TOO_SHORT', '示例句至少 3 个字'),
+          )
+        }
+      })
+    }
+
+    if (!Array.isArray(m.actions) || m.actions.length === 0) {
+      issues.push(issue('manifest.actions', 'MISSING_ACTIONS', '至少声明 1 个 action'))
+    } else {
+      m.actions.forEach((a, i) => {
+        need(!!a?.name, `manifest.actions[${i}].name`, 'BAD_ACTION', 'action 缺少 name')
+        need(
+          Array.isArray(a?.returns) && a.returns.length > 0,
+          `manifest.actions[${i}].returns`,
+          'BAD_ACTION',
+          'action 必须声明 returns',
+        )
+      })
+      const returnsAudio = m.actions.some((a) => (a?.returns || []).includes('audio'))
+      if (returnsAudio) {
+        need(
+          VOICE.has(m.voice?.strategy),
+          'manifest.voice.strategy',
+          'MISSING_VOICE',
+          '返回音频时必须声明 voice.strategy（audio / lyrics）',
         )
       }
-    })
-  }
-
-  if (!Array.isArray(m.actions) || m.actions.length === 0) {
-    issues.push(issue('manifest.actions', 'MISSING_ACTIONS', '至少声明 1 个 action'))
-  } else {
-    m.actions.forEach((a, i) => {
-      need(!!a?.name, `manifest.actions[${i}].name`, 'BAD_ACTION', 'action 缺少 name')
-      need(
-        Array.isArray(a?.returns) && a.returns.length > 0,
-        `manifest.actions[${i}].returns`,
-        'BAD_ACTION',
-        'action 必须声明 returns',
-      )
-    })
-    const returnsAudio = m.actions.some((a) => (a?.returns || []).includes('audio'))
-    if (returnsAudio) {
-      need(
-        VOICE.has(m.voice?.strategy),
-        'manifest.voice.strategy',
-        'MISSING_VOICE',
-        '返回音频时必须声明 voice.strategy（audio / lyrics）',
-      )
     }
+  } else {
+    if (m.schemaVersion !== 4) {
+      issues.push(issue('manifest.imports', 'BAD_IMPORT_SCHEMA', '声明 imports 必须使用 schemaVersion 4'))
+    }
+    if (m.apiVersion !== 3) {
+      issues.push(issue('manifest.imports', 'BAD_IMPORT_API', '声明 imports 必须使用 apiVersion 3'))
+    }
+    m.imports.forEach((s, i) => {
+      need(!!s?.id && /^[a-z][a-z0-9_]{0,20}$/.test(s.id), `manifest.imports[${i}].id`, 'BAD_IMPORT_ID', '导入 id 不合法')
+      need(s?.perUser === true, `manifest.imports[${i}].perUser`, 'BAD_IMPORT_PER_USER', '第一版必须 perUser=true')
+      need(Array.isArray(s?.accept) && s.accept.length > 0, `manifest.imports[${i}].accept`, 'BAD_IMPORT_ACCEPT', 'accept 不能为空')
+      need(s?.parser === 'chat', `manifest.imports[${i}].parser`, 'BAD_IMPORT_PARSER', '第一版只支持 parser=chat')
+      need(typeof s?.prompt === 'string' && isSafeEntryPath(s.prompt), `manifest.imports[${i}].prompt`, 'BAD_IMPORT_PROMPT', '导入 prompt 路径不合法')
+      need(Array.isArray(s?.targets) && s.targets.length > 0, `manifest.imports[${i}].targets`, 'BAD_IMPORT_TARGETS', 'targets 不能为空')
+    })
   }
 
   const outbound = m.permissions?.network?.outbound
@@ -296,7 +314,10 @@ export function validateManifest(m) {
     if (tp !== undefined && tp !== null && (tp < 0 || tp > 2)) {
       issues.push(issue('manifest.prompt.temperature', 'BAD_TEMPERATURE', 'temperature 需在 0–2 之间'))
     }
-    const allowed = new Set(['date', 'profile'])
+    const allowed = new Set(['date', 'profile', 'memory_digest'])
+    for (const f of m.config || []) {
+      if (f && typeof f.key === 'string') allowed.add('config.' + f.key)
+    }
     for (const a of m.actions || []) {
       for (const k of Object.keys(a?.params || {})) allowed.add(k)
     }
@@ -313,7 +334,7 @@ export function validateManifest(m) {
       }
     }
     for (const v of m.variables || []) {
-      if (typeof v !== 'string' || !/^[a-z][a-z0-9_]{0,30}$/.test(v)) {
+      if (typeof v !== 'string' || (!/^[a-z][a-z0-9_]{0,30}$/.test(v) && !/^config\.[a-zA-Z][a-zA-Z0-9_]{0,30}$/.test(v))) {
         issues.push(issue('manifest.variables', 'BAD_VARIABLE', `变量名不合法: ${v}`))
       } else if (!allowed.has(v)) {
         issues.push(issue('manifest.variables', 'VARIABLE_NOT_ALLOWED', `变量不在白名单（date/profile/action 参数/data 键）: ${v}`))

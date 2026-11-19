@@ -129,6 +129,23 @@ public class PluginImportController {
         }
     }
 
+    @PostMapping("/{id}/imports/{importId}/retry")
+    public Map<String, Object> retry(@PathVariable String id, @PathVariable long importId) {
+        InstalledPlugin plugin = registry.find(id);
+        if (plugin == null) {
+            return fail("插件未安装");
+        }
+        Map<String, Object> owned = importer.get(importId);
+        if (owned == null || !id.equals(owned.get("pluginId"))) {
+            return fail("导入记录不存在");
+        }
+        try {
+            return importer.retry(importId);
+        } catch (Exception e) {
+            return fail(e.getMessage());
+        }
+    }
+
     @DeleteMapping("/{id}/imports/{importId}")
     public Map<String, Object> delete(@PathVariable String id, @PathVariable long importId) {
         InstalledPlugin plugin = registry.find(id);

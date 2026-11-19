@@ -616,6 +616,16 @@
                     </el-tag>
                   </template>
                 </el-table-column>
+                <el-table-column label="进度" width="100">
+                  <template #default="{ row }">
+                    <el-progress
+                      v-if="row.status === 'queued' || row.status === 'extracting'"
+                      :percentage="row.progress || 0"
+                      :stroke-width="6"
+                    />
+                    <span v-else class="muted">{{ row.stage || '-' }}</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="启用" width="70">
                   <template #default="{ row }">
                     <el-switch
@@ -853,8 +863,28 @@
         </template>
       </el-dialog>
 
-      <el-dialog v-model="importDialogVisible" title="新增导入记录" width="700px">
-        <div v-if="!importPreview" class="import-upload">
+      <el-dialog
+        v-model="importDialogVisible"
+        title="新增导入记录"
+        width="700px"
+        @closed="stopImportPoll"
+      >
+        <div v-if="!importPreview && importCurrentId" class="import-progress">
+          <el-progress
+            :percentage="importProgress"
+            :status="importError ? 'exception' : undefined"
+            :stroke-width="10"
+          />
+          <p class="import-stage">{{ importStage || '处理中…' }}</p>
+          <el-alert
+            v-if="importError"
+            type="error"
+            :closable="false"
+            :title="importError"
+            description="可以重试；已完成的段落不会重复提取。"
+          />
+        </div>
+        <div v-else-if="!importPreview" class="import-upload">
           <div class="config-row">
             <label>导入给</label>
             <div class="config-control">
@@ -923,6 +953,12 @@
           </div>
 
           <el-alert
+            v-if="importPreview.truncated"
+            type="warning"
+            :closable="false"
+            title="记录过长，已截断后处理；建议拆分文件再导入。"
+          />
+          <el-alert
             v-if="(importPreview.warnings || []).length"
             type="warning"
             :closable="false"
@@ -931,9 +967,17 @@
         </div>
         <template #footer>
           <el-button @click="importDialogVisible = false">取消</el-button>
-          <el-button v-if="!importPreview" type="primary" :loading="importLoading" @click="uploadImport">
-            上传并解析
-          </el-button>
+          <el-button
+            v-if="!importPreview && importCurrentId && importError"
+            type="primary"
+            @click="retryImport"
+          >重试</el-button>
+          <el-button
+            v-else-if="!importPreview"
+            type="primary"
+            :loading="importLoading"
+            @click="uploadImport"
+          >上传并解析</el-button>
           <el-button v-else type="primary" :loading="importLoading" @click="applyImport">
             确认导入
           </el-button>
@@ -1362,6 +1406,10 @@ const importQq = ref<number | null>(null)
 const importFile = ref<File | null>(null)
 const importPreview = ref<any>(null)
 const importCurrentId = ref(0)
+const importProgress = ref(0)
+const importStage = ref('')
+const importError = ref('')
+const importPollTimer = ref<number | null>(null)
 const importApplyFacts = ref(true)
 const importApplyPersona = ref(true)
 const importEnablePersona = ref(true)
@@ -1440,13 +1488,24 @@ async function loadImports() {
   } catch { importRecords.value = [] }
 }
 
+function stopImportPoll() {
+  if (importPollTimer.value != null) {
+    window.clearTimeout(importPollTimer.value)
+    importPollTimer.value = null
+  }
+}
+
 function openImportDialog() {
+  stopImportPoll()
   const targets = configValues.value.targetUsers
   const first = Array.isArray(targets) && targets.length ? Number(targets[0]) : 0
   importQq.value = first || (pluginUsers.value.length ? Number(pluginUsers.value[0].qqId) : null)
   importFile.value = null
   importPreview.value = null
   importCurrentId.value = 0
+  importProgress.value = 0
+  importStage.value = ''
+  importError.value = ''
   importApplyFacts.value = true
   importApplyPersona.value = true
   importEnablePersona.value = true
@@ -1477,17 +1536,70 @@ async function uploadImport() {
     const r = await call<any>(
       `/api/plugins/${encodeURIComponent(id)}/imports?qqId=${importQq.value}`,
       { method: 'POST', body: fd })
-    if (!r.ok) throw new Error(r.message || '解析失败')
+    if (!r.ok) throw new Error(r.message || '上传失败')
     importCurrentId.value = r.result.importId
-    importPreview.value = r.result.preview
-    importSelectedFacts.value = (r.result.preview.facts || []).map((_: any, i: number) => i)
-    importApplyPersona.value = !!r.result.preview.persona?.detected
-    importEnablePersona.value = !!r.result.preview.persona?.detected
-    ElMessage.success('解析完成，请确认')
+    importPreview.value = null
+    importProgress.value = r.result.progress || 0
+    importStage.value = r.result.status === 'queued' ? '排队中' : '处理中'
+    importError.value = ''
+    ElMessage.success('已上传，后台提取中')
+    pollImport()
   } catch (e: any) {
     ElMessage.error(e.message || '上传失败')
   } finally {
     importLoading.value = false
+  }
+}
+
+async function pollImport() {
+  stopImportPoll()
+  const id = detail.value?.id
+  const importId = importCurrentId.value
+  if (!id || !importId) return
+  try {
+    const r = await call<any>(
+      `/api/plugins/${encodeURIComponent(id)}/imports/${importId}`)
+    if (!r.ok) throw new Error(r.message || '读取进度失败')
+    const item = r.item || {}
+    importProgress.value = item.progress || 0
+    importStage.value = item.stage || ''
+    if (item.status === 'review' || item.status === 'applied') {
+      const preview = { ...(item.preview || {}) }
+      preview.truncated = !!item.truncated
+      importPreview.value = preview
+      importSelectedFacts.value = (preview.facts || []).map((_: any, i: number) => i)
+      importApplyPersona.value = !!preview.persona?.detected
+      importEnablePersona.value = !!preview.persona?.detected
+      importLoading.value = false
+      return
+    }
+    if (item.status === 'failed') {
+      importError.value = item.error || '提取失败'
+      importLoading.value = false
+      return
+    }
+    importPollTimer.value = window.setTimeout(pollImport, 1500)
+  } catch (e: any) {
+    importError.value = e.message || '读取进度失败'
+    importPollTimer.value = window.setTimeout(pollImport, 2500)
+  }
+}
+
+async function retryImport() {
+  const id = detail.value?.id
+  if (!id || !importCurrentId.value) return
+  importError.value = ''
+  importProgress.value = 0
+  importStage.value = '排队中'
+  try {
+    const r = await call<any>(
+      `/api/plugins/${encodeURIComponent(id)}/imports/${importCurrentId.value}/retry`,
+      { method: 'POST' })
+    if (!r.ok) throw new Error(r.message || '重试失败')
+    ElMessage.success('已重新排队')
+    pollImport()
+  } catch (e: any) {
+    importError.value = e.message || '重试失败'
   }
 }
 
@@ -1518,6 +1630,7 @@ async function applyImport() {
       })
     if (!r.ok) throw new Error(r.message || '应用失败')
     ElMessage.success('已写入')
+    stopImportPoll()
     importDialogVisible.value = false
     await loadImports()
   } catch (e: any) {
@@ -1589,7 +1702,7 @@ function importUserName(qq: any): string {
 
 function importStatusText(status: string): string {
   const map: Record<string, string> = {
-    parsing: '解析中', extracting: '提取中', review: '待确认', applied: '已应用', failed: '失败',
+    parsing: '解析中', queued: '排队中', extracting: '提取中', review: '待确认', applied: '已应用', failed: '失败',
   }
   return map[status] || status || '-'
 }
@@ -2299,6 +2412,8 @@ onMounted(() => {
 .import-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .import-upload { display: flex; flex-direction: column; gap: 12px; }
 .import-drop { border: 1px dashed var(--el-border-color); border-radius: 8px; padding: 20px; text-align: center; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.import-progress { padding: 24px 8px; display: flex; flex-direction: column; gap: 10px; }
+.import-stage { margin: 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .import-preview { display: flex; flex-direction: column; gap: 12px; max-height: 60vh; overflow: auto; }
 .import-block h5 { margin: 8px 0; }
 .import-section { font-size: 13px; line-height: 1.6; margin-bottom: 4px; }

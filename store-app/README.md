@@ -2,6 +2,9 @@
 
 设计文档 §6 的实现：独立 Node 服务，只管**分发和审批**，不碰实例业务数据，运行期插件也不会回连它。
 
+> 2026-11-19：`verify.js` 支持 `schemaVersion` 2/3/4、`apiVersion` 1/2/3；
+> `imports` 型插件允许没有 `intent` / `actions`。源码已纳入 `store-app/`。
+
 ```
 store-app/
 ├── src/db.js        数据模型（authors / plugins / versions / downloads / revocations / intents / audit_log）

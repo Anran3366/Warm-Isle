@@ -118,15 +118,32 @@ public final class PluginSchema {
               title         TEXT,
               file_name     TEXT,
               message_count INTEGER NOT NULL DEFAULT 0,
-              status        TEXT NOT NULL DEFAULT 'parsing',
+              status        TEXT NOT NULL DEFAULT 'queued',
               error         TEXT,
               persona_id    INTEGER,
               enabled       INTEGER NOT NULL DEFAULT 0,
+              progress      INTEGER NOT NULL DEFAULT 0,
+              stage         TEXT,
+              total_chunks  INTEGER NOT NULL DEFAULT 0,
+              done_chunks   INTEGER NOT NULL DEFAULT 0,
+              truncated     INTEGER NOT NULL DEFAULT 0,
               created_at    TEXT NOT NULL,
               updated_at    TEXT NOT NULL
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_plugin_imports_qq ON plugin_imports(plugin_id, target_qq, id)",
+            """
+            CREATE TABLE IF NOT EXISTS plugin_import_chunks (
+              import_id   INTEGER NOT NULL,
+              chunk_index INTEGER NOT NULL,
+              text        TEXT NOT NULL,
+              status      TEXT NOT NULL DEFAULT 'pending',
+              payload     TEXT,
+              error       TEXT,
+              updated_at  TEXT NOT NULL,
+              PRIMARY KEY(import_id, chunk_index)
+            )
+            """,
             """
             CREATE TABLE IF NOT EXISTS plugin_import_candidates (
               id          INTEGER PRIMARY KEY AUTOINCREMENT,

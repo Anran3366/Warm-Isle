@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>暖屿插件商店 · 作者中心</title>
+<link rel="stylesheet" href="/author/author.css" />
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <h1>插件商店 · 作者中心</h1>
+    <span class="hint">上传的包通过人工审核后，才会出现在部署者的商店页里</span>
+  </div>
+  <nav class="nav">
+    <a href="/">商店首页</a>
+  </nav>
+</header>
+
+<!-- 未登录：注册 / 登录 -->
+<section id="gate" class="panel" hidden>
+  <div class="tabs">
+    <button id="tabLogin" class="tab active">我有 token，直接进</button>
+    <button id="tabRegister" class="tab">注册作者（要邀请码）</button>
+  </div>
+
+  <div id="loginPane" class="pane">
+    <label>作者 token
+      <input id="loginToken" type="password" autocomplete="off" placeholder="注册时发给你的那串" />
+    </label>
+    <button id="doLogin" class="btn">进入</button>
+  </div>
+
+  <div id="registerPane" class="pane" hidden>
+    <label>邀请码
+      <input id="inviteCode" type="text" autocomplete="off" placeholder="找商店所有者要" />
+    </label>
+    <label>命名空间（你所有插件 id 的前缀，3–25 位小写字母数字）
+      <input id="namespace" type="text" autocomplete="off" placeholder="例如 menran" />
+    </label>
+    <label>署名（展示给部署者看）
+      <input id="authorName" type="text" autocomplete="off" placeholder="例如 暖屿" />
+    </label>
+    <label>邮箱（可选，找回 token 用）
+      <input id="email" type="email" autocomplete="off" />
+    </label>
+    <button id="doRegister" class="btn">注册</button>
+  </div>
+
+  <div id="tokenResult" class="token-result" hidden>
+    <p><b>这是你的作者 token，只显示这一次，请立即保存：</b></p>
+    <code id="newToken"></code>
+    <button id="copyToken" class="btn ghost">复制并进入</button>
+  </div>
+</section>
+
+<!-- 已登录：工作台 -->
+<section id="bench" hidden>
+  <div class="panel me">
+    <div>
+      <b id="meName"></b>
+      <span class="hint" id="meNs"></span>
+    </div>
+    <div class="me-actions">
+      <button id="rotate" class="btn ghost">轮换 token</button>
+      <button id="logout" class="btn ghost">退出</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>上传新包 / 新版本</h2>
+    <p class="hint">zip 包，≤50MB；插件 id 必须以你的命名空间开头。上传即进入待审队列。</p>
+    <div class="upload-row">
+      <input id="file" type="file" accept=".zip,application/zip" />
+      <button id="doUpload" class="btn">上传并体检</button>
+    </div>
+    <div id="uploadResult" class="upload-result" hidden></div>
+  </div>
+
+  <div class="panel">
+    <h2>我的插件</h2>
+    <main id="mine" class="list"><p class="empty">加载中…</p></main>
+  </div>
+</section>
+
+<template id="pluginTpl">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <h2 class="title"></h2>
+        <p class="meta"></p>
+      </div>
+      <span class="status"></span>
+    </div>
+    <table class="versions">
+      <thead><tr><th>版本</th><th>状态</th><th>审核备注</th><th>提交时间</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </article>
+</template>
+
+<script src="/author/author.js"></script>
+</body>
+</html>

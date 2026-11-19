@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-11-19 10:20
+
+- 设备：dev-machine · macOS · user · DSH Agent
+- 变更：导入异步化 + 商店源码入库——
+  - 导入改为队列 + 分块落盘：上传立即返回 `queued`，后台按块提取，`progress/stage` 可轮询；服务重启自动接回，失败可重试，已完成分块不重复调用模型；
+  - 进入审核后删除原始分块；`plugin_imports` 补 progress/stage/total_chunks/done_chunks/truncated 列；
+  - 商店服务源码纳入 `store-app/`（不含 node_modules/data/.env/私钥），`verify.js` 的 schema 2/3/4 支持入库；
+  - 博客手册补异步导入说明。
+- 影响：后端 / 前端 / 文档 / 商店源码
+- 提交：本次
+
 ## 2026-11-19 10:05
 
 - 设备：dev-machine · macOS · user · DSH Agent
