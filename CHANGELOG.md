@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-11-19 09:20
+
+- 设备：dev-machine · macOS · user · DSH Agent
+- 变更：插件开发文档补全——
+  - 新增 `docs/plugin-dev-manual-v4.md`：schemaVersion 4 / apiVersion 3、config / storage / schedules / imports、按 QQ 人设与长期记忆；
+  - 旧 v2.3 手册标记为历史版；
+  - 博客开发手册更新为 v4.0（同一 URL：`https://web.example.com/blog/post/warm-isle-plugin-dev-manual`）；
+  - README、framework/imports 文档补链接；商店校验规则记录。
+- 影响：文档 / 博客
+- 提交：本次
+
 ## 2026-11-18 17:40
 
 - 设备：dev-machine · macOS · user · DSH Agent

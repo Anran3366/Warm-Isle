@@ -1,6 +1,7 @@
 # 插件导入能力（imports）与按用户人设
 
-> 状态：2026-11-18 第一版。宿主通用，插件只声明。
+> 状态：2026-11-19 最新版。宿主通用，插件只声明。
+> 完整开发手册见 [plugin-dev-manual-v4.md](plugin-dev-manual-v4.md)。
 > 插件：`menran.deepseek-import`（schemaVersion 4 / apiVersion 3）
 
 ---

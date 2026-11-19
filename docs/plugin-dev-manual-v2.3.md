@@ -1,4 +1,6 @@
-# 暖屿插件开发手册 v2.3
+# 暖屿插件开发手册 v2.3（旧版）
+
+> ⚠️ 已被 [v4.0](plugin-dev-manual-v4.md) 取代。新插件请按 v4 的 config / storage / schedules / imports 规则开发；本文仅作历史参考。
 
 > **暖屿 Warm Isle** 是一个会记住你的 QQ AI 陪伴机器人。
 >

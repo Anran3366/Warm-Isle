@@ -86,7 +86,7 @@
 
 入口：后台左侧 **记忆 → 记忆星图 → 记忆进化**，或直接访问 `/#/memory/evolve`。
 
-插件框架 v3 说明见 [docs/plugin-framework-v3.md](docs/plugin-framework-v3.md)；
+插件开发手册最新版见 [docs/plugin-dev-manual-v4.md](docs/plugin-dev-manual-v4.md)；插件框架 v3 说明见 [docs/plugin-framework-v3.md](docs/plugin-framework-v3.md)；
 导入能力与按 QQ 人设见 [docs/plugin-imports.md](docs/plugin-imports.md)。
 
 ## 架构
