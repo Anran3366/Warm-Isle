@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-11-19 15:05
+
+- 设备：dev-machine · macOS · user · DSH Agent
+- 变更：导入应用事务化——
+  - `apply` 用 bot 库连接 `ATTACH shared.db`，把 facts、friend_profile、人设、绑定、导入状态、审计放进同一事务；
+  - 任一步失败整体回滚；已验证失败时 facts 0 条、persona 0 个、记录仍为 review；
+  - 补了“只创建人设未开启，之后手动开启”时自动绑定；
+  - 手册/博客补事务说明。
+- 影响：后端 / 文档 / 博客
+- 提交：本次
+
 ## 2026-11-19 10:20
 
 - 设备：dev-machine · macOS · user · DSH Agent

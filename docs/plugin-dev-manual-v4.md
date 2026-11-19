@@ -1002,6 +1002,8 @@ POST /api/plugins/{id}/imports/{id}/retry
 - 一个 QQ 同时只有一个启用记录；
 - facts 写目标 QQ 的 `facts`；
 - 生日/纪念日写 `friend_profile.important_dates`；
+- 应用时 facts / 画像 / 人设 / 绑定 / 导入状态 / 审计在同一事务里
+  （bot 库 ATTACH shared 库），失败整体回滚；
 - 导入后重建 L0 常驻画像。
 
 ## 6  意图与触发

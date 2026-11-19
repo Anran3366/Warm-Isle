@@ -8,6 +8,7 @@ import com.qqbot.llm.LlmResult;
 import com.qqbot.memory.Db;
 import com.qqbot.memory.FactStore;
 import com.qqbot.memory.Persona;
+import com.qqbot.memory.SharedDb;
 import com.qqbot.memory.PersonaStore;
 import com.qqbot.memory.evolve.PersonProfileService;
 import com.qqbot.memory.evolve.ProfileSnapshotService;
@@ -87,6 +88,7 @@ public class PluginImportService {
     private final ProfileSnapshotService snapshots;
     private final ChatTranscriptParser parser;
     private final PluginRegistry registry;
+    private final SharedDb shared;
     private final ObjectMapper mapper = new ObjectMapper();
     private final ExecutorService pool = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "plugin-import-worker");
@@ -97,7 +99,8 @@ public class PluginImportService {
 
     public PluginImportService(Db db, DeepSeekClient llm, PersonaStore personas, FactStore facts,
                                PersonProfileService profiles, ProfileSnapshotService snapshots,
-                               ChatTranscriptParser parser, PluginRegistry registry) {
+                               ChatTranscriptParser parser, PluginRegistry registry,
+                               SharedDb shared) {
         this.db = db;
         this.llm = llm;
         this.personas = personas;
@@ -106,6 +109,7 @@ public class PluginImportService {
         this.snapshots = snapshots;
         this.parser = parser;
         this.registry = registry;
+        this.shared = shared;
     }
 
     @jakarta.annotation.PreDestroy
@@ -393,51 +397,94 @@ public class PluginImportService {
         }
         long targetQq = ((Number) row.get("targetQq")).longValue();
         String pluginId = String.valueOf(row.get("pluginId"));
-        if (applyPersona) {
-            validatePersona(payload);
-        }
+        PersonaDraft draft = applyPersona ? personaDraft(payload) : null;
+        boolean enabledNow = enablePersona && draft != null;
         int factCount = 0;
-        if (applyFacts) {
-            factCount += applyFacts(payload, targetQq, factIndexes);
-        }
         Long personaId = null;
-        if (applyPersona) {
-            personaId = applyPersona(payload, targetQq, pluginId, enablePersona);
-        }
-        try (Connection c = db.open();
-             PreparedStatement ps = c.prepareStatement(
-                     "INSERT INTO plugin_import_apply_log(import_id, persona_id, fact_count, created_at) "
-                             + "VALUES(?,?,?,?)")) {
-            ps.setLong(1, importId);
-            if (personaId == null) {
-                ps.setNull(2, java.sql.Types.INTEGER);
-            } else {
-                ps.setLong(2, personaId);
+        Connection c = null;
+        try {
+            c = db.open();
+            // 事务跨 bot 库和 shared 库；任一步失败都回滚
+            try (Statement st = c.createStatement()) {
+                String path = shared.getPath().toAbsolutePath().toString().replace("'", "''");
+                st.execute("ATTACH DATABASE '" + path + "' AS shared");
             }
-            ps.setInt(3, factCount);
-            ps.setString(4, now());
-            ps.executeUpdate();
-        } catch (Exception e) {
-            log.debug("写导入审计失败: {}", e.getMessage());
-        }
-        if (enablePersona && personaId != null) {
-            try (Connection c = db.open();
-                 PreparedStatement ps = c.prepareStatement(
-                         "UPDATE plugin_imports SET enabled=0 WHERE plugin_id=? AND target_qq=? AND id<>?")) {
-                ps.setString(1, pluginId);
-                ps.setLong(2, targetQq);
-                ps.setLong(3, importId);
+            c.setAutoCommit(false);
+            if (draft != null) {
+                personaId = insertPersona(c, draft, pluginId, targetQq, enabledNow);
+            }
+            if (applyFacts) {
+                factCount = applyFactsTxn(c, payload, targetQq, factIndexes);
+            }
+            if (enabledNow && personaId != null) {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE main.plugin_imports SET enabled=0 "
+                                + "WHERE plugin_id=? AND target_qq=? AND id<>?")) {
+                    ps.setString(1, pluginId);
+                    ps.setLong(2, targetQq);
+                    ps.setLong(3, importId);
+                    ps.executeUpdate();
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO main.plugin_import_apply_log(import_id, persona_id, fact_count, created_at) "
+                            + "VALUES(?,?,?,?)")) {
+                ps.setLong(1, importId);
+                if (personaId == null) {
+                    ps.setNull(2, java.sql.Types.INTEGER);
+                } else {
+                    ps.setLong(2, personaId);
+                }
+                ps.setInt(3, factCount);
+                ps.setString(4, now());
                 ps.executeUpdate();
-            } catch (Exception ignored) {
-                // 多记录切换失败不影响本次应用
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE main.plugin_imports SET status='applied', "
+                            + "persona_id=COALESCE(?, persona_id), enabled=?, progress=100, "
+                            + "stage='已应用', error=NULL, updated_at=? WHERE id=?")) {
+                if (personaId == null) {
+                    ps.setNull(1, java.sql.Types.INTEGER);
+                } else {
+                    ps.setLong(1, personaId);
+                }
+                ps.setInt(2, enabledNow ? 1 : 0);
+                ps.setString(3, now());
+                ps.setLong(4, importId);
+                ps.executeUpdate();
+            }
+            c.commit();
+        } catch (Exception e) {
+            if (c != null) {
+                try {
+                    c.rollback();
+                } catch (Exception ignored) {
+                    // 回滚失败也继续抛原始错误
+                }
+            }
+            throw e instanceof IllegalArgumentException ia ? ia
+                    : new IllegalStateException("应用失败，已回滚: " + e.getMessage(), e);
+        } finally {
+            if (c != null) {
+                try {
+                    c.setAutoCommit(true);
+                    try (Statement st = c.createStatement()) {
+                        st.execute("DETACH DATABASE shared");
+                    }
+                } catch (Exception ignored) {
+                    // 连接关闭时自动释放
+                }
+                try {
+                    c.close();
+                } catch (Exception ignored) {
+                    // ignore
+                }
             }
         }
-        boolean enabledNow = enablePersona && personaId != null;
-        updateStatus(importId, "applied", personaId, enabledNow ? 1 : 0);
         try {
             snapshots.rebuild(targetQq);
         } catch (Exception ignored) {
-            // 画像重建失败不影响导入
+            // 画像重建失败不影响已提交的导入
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("ok", true);
@@ -459,7 +506,11 @@ public class PluginImportService {
             throw new IllegalStateException("缺少机器人账号上下文");
         }
         if (personaId > 0) {
-            personas.setBindingEnabled(botId, targetQq, enabled);
+            if (enabled) {
+                personas.bind(botId, targetQq, personaId, String.valueOf(row.get("pluginId")));
+            } else {
+                personas.setBindingEnabled(botId, targetQq, false);
+            }
         }
         if (enabled) {
             try (Connection c = db.open();
@@ -592,7 +643,72 @@ public class PluginImportService {
         out.put("warnings", new ArrayList<>(warnings));
     }
 
-    private int applyFacts(JsonNode payload, long targetQq, List<Integer> indexes) {
+    private record PersonaDraft(String name, String content) {
+    }
+
+    private PersonaDraft personaDraft(JsonNode payload) {
+        JsonNode p = payload == null ? null : payload.get("persona");
+        if (p == null || !p.path("detected").asBoolean(false)) {
+            return null;
+        }
+        String content = personaContent(p);
+        if (content.isBlank()) {
+            return null;
+        }
+        String lower = content.toLowerCase(Locale.ROOT);
+        for (String bad : BAD_PERSONA) {
+            if (lower.contains(bad)) {
+                throw new IllegalArgumentException("人设包含疑似越权指令，已拒绝应用: " + bad);
+            }
+        }
+        String name = p.path("name").asText("").trim();
+        if (name.isBlank()) {
+            name = "导入人设";
+        }
+        return new PersonaDraft(cut(name, 30), content);
+    }
+
+    private Long insertPersona(Connection c, PersonaDraft draft, String pluginId,
+                               long targetQq, boolean enable) throws Exception {
+        long personaId;
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO shared.personas(name, content, active) VALUES(?,?,0)")) {
+            ps.setString(1, draft.name + " · " + targetQq);
+            ps.setString(2, draft.content);
+            ps.executeUpdate();
+        }
+        try (Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT last_insert_rowid()")) {
+            personaId = rs.next() ? rs.getLong(1) : 0;
+        }
+        if (personaId <= 0) {
+            throw new IllegalStateException("创建人设失败");
+        }
+        if (enable) {
+            Long botId = BotContext.get();
+            if (botId == null) {
+                throw new IllegalStateException("缺少机器人账号上下文");
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO shared.persona_bindings(bot_id, qq_id, persona_id, enabled, "
+                            + "source_plugin, created_at, updated_at) VALUES(?,?,?,1,?,?,?) "
+                            + "ON CONFLICT(bot_id, qq_id) DO UPDATE SET "
+                            + "persona_id=excluded.persona_id, enabled=1, "
+                            + "source_plugin=excluded.source_plugin, updated_at=excluded.updated_at")) {
+                ps.setLong(1, botId);
+                ps.setLong(2, targetQq);
+                ps.setLong(3, personaId);
+                ps.setString(4, pluginId);
+                ps.setString(5, now());
+                ps.setString(6, now());
+                ps.executeUpdate();
+            }
+        }
+        return personaId;
+    }
+
+    private int applyFactsTxn(Connection c, JsonNode payload, long targetQq,
+                              List<Integer> indexes) throws Exception {
         Set<Integer> selected = indexes == null ? null : new LinkedHashSet<>(indexes);
         if (selected != null && selected.isEmpty()) {
             return 0;
@@ -606,25 +722,25 @@ public class PluginImportService {
                 }
                 JsonNode f = fs.get(i);
                 String category = normalizeCategory(f.path("category").asText("profile"));
-                String key = f.path("key").asText("").trim();
-                String value = f.path("value").asText("").trim();
+                String key = cut(f.path("key").asText("").trim(), 30);
+                String value = cut(f.path("value").asText("").trim(), 200);
                 if (key.isBlank() || value.isBlank()) {
                     continue;
                 }
                 double confidence = Math.max(0.1, Math.min(1.0, f.path("confidence").asDouble(0.7)));
-                facts.upsert(targetQq, category, cut(key, 30), cut(value, 200), confidence);
+                upsertFactTxn(c, targetQq, category, key, value, confidence);
+                applyImportantDateTxn(c, targetQq, key, value);
                 count++;
-                applyImportantDate(targetQq, key, value);
             }
         }
         JsonNode styles = payload.get("styles");
         if (styles != null && styles.isArray()) {
             for (JsonNode s : styles) {
-                String key = s.path("key").asText("").trim();
-                String value = s.path("value").asText("").trim();
+                String key = cut("沟通偏好·" + s.path("key").asText("").trim(), 30);
+                String value = cut(s.path("value").asText("").trim(), 200);
                 if (!key.isBlank() && !value.isBlank()) {
-                    facts.upsert(targetQq, "preference", cut("沟通偏好·" + key, 30),
-                            cut(value, 200), Math.max(0.1, s.path("confidence").asDouble(0.7)));
+                    upsertFactTxn(c, targetQq, "preference", key, value,
+                            Math.max(0.1, s.path("confidence").asDouble(0.7)));
                     count++;
                 }
             }
@@ -632,42 +748,133 @@ public class PluginImportService {
         return count;
     }
 
-    private void validatePersona(JsonNode payload) {
-        JsonNode p = payload == null ? null : payload.get("persona");
-        if (p == null || !p.path("detected").asBoolean(false)) {
+    private void upsertFactTxn(Connection c, long qqId, String category, String key,
+                               String value, double confidence) throws Exception {
+        String now = now();
+        String status = confidence >= 0.7 ? "active" : "pending";
+        long existingId = 0;
+        String existingStatus = null;
+        double existingConfidence = 0;
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT id, status, confidence FROM main.facts "
+                        + "WHERE qq_id=? AND category=? AND key=? LIMIT 1")) {
+            ps.setLong(1, qqId);
+            ps.setString(2, category);
+            ps.setString(3, key);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    existingId = rs.getLong(1);
+                    existingStatus = rs.getString(2);
+                    existingConfidence = rs.getDouble(3);
+                }
+            }
+        }
+        if (existingId > 0) {
+            boolean keep = "active".equals(existingStatus) && confidence + 0.15 < existingConfidence;
+            if (keep) {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE main.facts SET last_confirmed=? WHERE id=?")) {
+                    ps.setString(1, now);
+                    ps.setLong(2, existingId);
+                    ps.executeUpdate();
+                }
+            } else {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE main.facts SET value=?, confidence=?, status=?, last_confirmed=? WHERE id=?")) {
+                    ps.setString(1, value);
+                    ps.setDouble(2, confidence);
+                    ps.setString(3, status);
+                    ps.setString(4, now);
+                    ps.setLong(5, existingId);
+                    ps.executeUpdate();
+                }
+            }
             return;
         }
-        String content = personaContent(p);
-        String lower = content.toLowerCase(Locale.ROOT);
-        for (String bad : BAD_PERSONA) {
-            if (lower.contains(bad)) {
-                throw new IllegalArgumentException("人设包含疑似越权指令，已拒绝应用: " + bad);
-            }
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO main.facts(qq_id, category, key, value, confidence, status, "
+                        + "first_seen, last_confirmed) VALUES(?,?,?,?,?,?,?,?)")) {
+            ps.setLong(1, qqId);
+            ps.setString(2, category);
+            ps.setString(3, key);
+            ps.setString(4, value);
+            ps.setDouble(5, confidence);
+            ps.setString(6, status);
+            ps.setString(7, now);
+            ps.setString(8, now);
+            ps.executeUpdate();
         }
     }
 
-    private Long applyPersona(JsonNode payload, long targetQq, String pluginId, boolean enable) {
-        JsonNode p = payload.get("persona");
-        if (p == null || !p.path("detected").asBoolean(false)) {
-            return null;
+    private void applyImportantDateTxn(Connection c, long qqId, String key, String value) throws Exception {
+        String md = normalizeDate(value);
+        if (md == null) {
+            return;
         }
-        String name = p.path("name").asText("").trim();
-        if (name.isBlank()) {
-            name = "导入人设";
+        String lower = (key + " " + value).toLowerCase(Locale.ROOT);
+        if (!(lower.contains("生日") || lower.contains("纪念") || lower.contains("重要日"))) {
+            return;
         }
-        String content = personaContent(p);
-        if (content.isBlank()) {
-            return null;
-        }
-        validatePersona(payload);
-        long personaId = personas.create(cut(name, 30) + " · " + targetQq, content);
-        if (enable) {
-            Long botId = BotContext.get();
-            if (botId != null) {
-                personas.bind(botId, targetQq, personaId, pluginId);
+        String address = "";
+        String stage = "";
+        String traits = "[]";
+        String taboos = "[]";
+        String datesJson = "[]";
+        boolean exists = false;
+        try (PreparedStatement ps = c.prepareStatement(
+                "SELECT address, stage, traits, taboos, important_dates FROM main.friend_profile "
+                        + "WHERE qq_id=?")) {
+            ps.setLong(1, qqId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    exists = true;
+                    address = rs.getString(1);
+                    stage = rs.getString(2);
+                    traits = rs.getString(3);
+                    taboos = rs.getString(4);
+                    datesJson = rs.getString(5);
+                }
             }
         }
-        return personaId;
+        JsonNode raw = mapper.readTree(datesJson == null || datesJson.isBlank() ? "[]" : datesJson);
+        com.fasterxml.jackson.databind.node.ArrayNode dates = raw.isArray()
+                ? (com.fasterxml.jackson.databind.node.ArrayNode) raw
+                : mapper.createArrayNode();
+        for (JsonNode one : dates) {
+            if (md.equals(one.path("md").asText(""))) {
+                return;
+            }
+        }
+        if (dates.size() >= 12) {
+            return;
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode item = mapper.createObjectNode();
+        item.put("md", md);
+        item.put("label", cut(key, 10));
+        dates.add(item);
+        String now = now();
+        if (exists) {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE main.friend_profile SET important_dates=?, profile_updated_at=? WHERE qq_id=?")) {
+                ps.setString(1, mapper.writeValueAsString(dates));
+                ps.setString(2, now);
+                ps.setLong(3, qqId);
+                ps.executeUpdate();
+            }
+        } else {
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO main.friend_profile(qq_id, address, stage, traits, taboos, "
+                            + "important_dates, profile_updated_at) VALUES(?,?,?,?,?,?,?)")) {
+                ps.setLong(1, qqId);
+                ps.setString(2, address);
+                ps.setString(3, stage);
+                ps.setString(4, traits);
+                ps.setString(5, taboos);
+                ps.setString(6, mapper.writeValueAsString(dates));
+                ps.setString(7, now);
+                ps.executeUpdate();
+            }
+        }
     }
 
     private String personaContent(JsonNode p) {
@@ -691,44 +898,6 @@ public class PluginImportService {
             }
         }
         return cut(sb.toString().trim(), 4000);
-    }
-
-    private void applyImportantDate(long qqId, String key, String value) {
-        String md = normalizeDate(value);
-        if (md == null) {
-            return;
-        }
-        String lower = (key + " " + value).toLowerCase(Locale.ROOT);
-        if (!(lower.contains("生日") || lower.contains("纪念") || lower.contains("重要日"))) {
-            return;
-        }
-        try {
-            Map<String, Object> current = profiles.get(qqId);
-            List<Map<String, String>> dates = new ArrayList<>();
-            Object raw = current.get("importantDates");
-            if (raw instanceof List<?> list) {
-                for (Object o : list) {
-                    if (o instanceof Map<?, ?> m) {
-                        Map<String, String> one = new LinkedHashMap<>();
-                        one.put("md", String.valueOf(m.get("md")));
-                        one.put("label", String.valueOf(m.get("label")));
-                        dates.add(one);
-                    }
-                }
-            }
-            boolean exists = dates.stream().anyMatch(d -> md.equals(d.get("md")));
-            if (!exists && dates.size() < 12) {
-                dates.add(Map.of("md", md, "label", cut(key, 10)));
-                profiles.save(qqId,
-                        String.valueOf(current.getOrDefault("address", "")),
-                        String.valueOf(current.getOrDefault("stage", "")),
-                        stringList(current.get("traits")),
-                        stringList(current.get("taboos")),
-                        dates);
-            }
-        } catch (Exception e) {
-            log.debug("写入重要日期失败: {}", e.getMessage());
-        }
     }
 
     private static String normalizeDate(String value) {
