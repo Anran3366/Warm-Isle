@@ -307,7 +307,8 @@ public class PluginStoreController {
     }
 
     private static boolean compatible(String host, String minHost, int apiVersion) {
-        if (apiVersion != 1) {
+        // 1: 旧插件；2: config/storage/schedules；3: imports
+        if (apiVersion < 1 || apiVersion > 3) {
             return false;
         }
         if (host == null || minHost == null) {

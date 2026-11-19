@@ -8,6 +8,7 @@
 | 适用代码 | `warm_isle`（Java 21 / Spring Boot 3 / Vue 3 / SQLite / NapCat 或 SnowLuma OneBot v11） |
 | 取代 | `docs/plugin-store-design.md`（v1，内容包时代，部分前提已失效） |
 | 对齐 | `docs/plugin-refactor-plan.md`、`docs/plugin-io-contract.md`、`docs/plugin-dev-spec.md`（差异见 §13.4） |
+| 2026-11-19 扩展 | 商店校验支持 `schemaVersion` 2/3/4、`apiVersion` 1/2/3；import-only 插件允许不声明 intent/actions；`menran.deepseek-import v1.0.0` 已审核上架 |
 
 **一句话：** 商店只管分发和审批，宿主只管执行和约束，插件运行期不回连商店。部署者能浏览、下载、按需启用；作者能上传、等审批；机器人装上就能在对话里真的用出来。
 
